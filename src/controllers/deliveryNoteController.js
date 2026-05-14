@@ -7,7 +7,9 @@ import {
   Tenant,
   Invoice,
   InvoiceItem,
+  User
 } from "../models/index.js";
+
 
 const toNumber = (value, fallback = 0) => {
   const number = Number(value);
@@ -263,7 +265,19 @@ export const getDeliveryNotes = async (req, res) => {
 
     const deliveryNotes = await DeliveryNote.findAll({
       where: { tenantId },
-      include: [{ model: DeliveryNoteItem, as: "items" }],
+      include: [
+      { model: DeliveryNoteItem, as: "items" },
+      {
+        model: User,
+        as: "creator",
+        attributes: ["id", "name", "email", "role"],
+      },
+      {
+        model: User,
+        as: "updater",
+        attributes: ["id", "name", "email", "role"],
+      },
+    ],
       order: [["createdAt", "DESC"]],
     });
 
@@ -373,6 +387,8 @@ export const createDeliveryNote = async (req, res) => {
         subtotal,
         tax,
         total,
+        createdBy: userId,
+        updatedBy: userId,
       },
       { transaction }
     );
@@ -459,7 +475,10 @@ export const issueDeliveryNote = async (req, res) => {
       transaction,
     });
 
-    await deliveryNote.update({ status: "issued" }, { transaction });
+    await deliveryNote.update(
+      { status: "issued", updatedBy: userId },
+      { transaction }
+    );
 
     await transaction.commit();
 
@@ -477,6 +496,7 @@ export const issueDeliveryNote = async (req, res) => {
 export const markDeliveryNoteDelivered = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
+    const userId = req.user?.id || null;
     const { id } = req.params;
     const { receivedByName = null, receivedById = null } = req.body;
 
@@ -499,6 +519,7 @@ export const markDeliveryNoteDelivered = async (req, res) => {
       receivedByName,
       receivedById,
       receivedAt: new Date(),
+      updatedBy: userId,
     });
 
     return res.json({
@@ -544,7 +565,10 @@ export const cancelDeliveryNote = async (req, res) => {
       });
     }
 
-    await deliveryNote.update({ status: "cancelled" }, { transaction });
+    await deliveryNote.update(
+      { status: "cancelled", updatedBy: userId },
+      { transaction }
+    );
 
     await transaction.commit();
 

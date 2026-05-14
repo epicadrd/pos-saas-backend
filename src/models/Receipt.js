@@ -61,6 +61,16 @@ export const Receipt = sequelize.define("Receipt", {
     type: DataTypes.ENUM("paid", "cancelled"),
     defaultValue: "paid",
   },
+
+  createdBy: {
+  type: DataTypes.INTEGER,
+  allowNull: true,
+  },
+
+  updatedBy: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
 });
 
 Tenant.hasMany(Receipt, { foreignKey: "tenantId" });

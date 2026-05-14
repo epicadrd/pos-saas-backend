@@ -8,6 +8,8 @@ import {
   Tenant,
   User,
 } from "../models/index.js";
+import { logActivity } from "../utils/activityLogger.js";
+
 
 const toNumber = (value, fallback = 0) => {
   const number = Number(value);
@@ -359,6 +361,20 @@ const total = normalizedItems.reduce((acc, i) => acc + i.total, 0);
       },
       { transaction }
     );
+
+    await logActivity({
+      tenantId,
+      userId,
+      module: "invoices",
+      action: "CREATE_INVOICE",
+      description: `${req.user.email} creó la factura ${invoice.invoiceNumber}`,
+      metadata: {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        total,
+      },
+      transaction,
+    });
 
     await tenant.update(
       {

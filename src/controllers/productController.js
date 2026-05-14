@@ -1,4 +1,4 @@
-import { Op } from "sequelize";
+import { Op, col, fn, literal } from "sequelize";
 import { sequelize, Product, StockMovement, User } from "../models/index.js";
 
 const toNumber = (value, fallback = 0) => {
@@ -35,7 +35,15 @@ const normalizeProductPayload = (body) => {
 export const getProducts = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
-    const { search = "", status = "active", type = "all" } = req.query;
+
+    const {
+      search = "",
+      status = "active",
+      type = "all",
+      paginated = "false",
+      page = 1,
+      limit = 25,
+    } = req.query;
 
     const where = { tenantId };
 
@@ -53,12 +61,82 @@ export const getProducts = async (req, res) => {
     if (type === "product") where.productType = "product";
     if (type === "service") where.productType = "service";
 
-    const products = await Product.findAll({
+    if (paginated !== "true") {
+      const products = await Product.findAll({
+        where,
+        order: [["createdAt", "DESC"]],
+      });
+
+      return res.json(products);
+    }
+
+    const safePage = Math.max(Number(page) || 1, 1);
+    const safeLimit = Math.min(Math.max(Number(limit) || 25, 5), 100);
+    const offset = (safePage - 1) * safeLimit;
+
+    const { rows, count } = await Product.findAndCountAll({
       where,
       order: [["createdAt", "DESC"]],
+      limit: safeLimit,
+      offset,
     });
 
-    return res.json(products);
+    const [totalProducts, totalServices, lowStockCount, inventoryValueRow] =
+      await Promise.all([
+        Product.count({
+          where: {
+            ...where,
+            productType: "product",
+          },
+        }),
+
+        Product.count({
+          where: {
+            ...where,
+            productType: "service",
+          },
+        }),
+
+        Product.count({
+          where: {
+            ...where,
+            productType: "product",
+            trackStock: true,
+            stock: { [Op.lte]: col("minStock") },
+          },
+        }),
+
+        Product.findOne({
+          where: {
+            ...where,
+            productType: "product",
+            trackStock: true,
+          },
+          attributes: [
+            [
+              fn("COALESCE", fn("SUM", literal("stock * costPrice")), 0),
+              "inventoryValue",
+            ],
+          ],
+          raw: true,
+        }),
+      ]);
+
+    return res.json({
+      data: rows,
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        total: count,
+        totalPages: Math.ceil(count / safeLimit) || 1,
+      },
+      summary: {
+        totalProducts,
+        totalServices,
+        lowStock: lowStockCount,
+        inventoryValue: Number(inventoryValueRow?.inventoryValue || 0),
+      },
+    });
   } catch (error) {
     console.log("GET PRODUCTS ERROR:", error);
     return res.status(500).json({ message: "Error obteniendo productos" });

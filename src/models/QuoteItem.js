@@ -13,7 +13,7 @@ export const QuoteItem = sequelize.define("QuoteItem", {
 
   tenantId: {
     type: DataTypes.INTEGER,
-    allowNull: true,
+    allowNull: false,
   },
 
   quoteId: {

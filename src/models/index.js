@@ -14,6 +14,7 @@ import { PurchaseOrder } from "./PurchaseOrder.js";
 import { PurchaseOrderItem } from "./PurchaseOrderItem.js";
 import { Customer } from "./Customer.js";
 import { Supplier } from "./Supplier.js";
+import { ActivityLog } from "./ActivityLog.js";
 
 
 Invoice.belongsTo(User, {
@@ -34,6 +35,41 @@ Quote.belongsTo(User, {
 Quote.belongsTo(User, {
   foreignKey: "updatedBy",
   as: "updater",
+});
+
+PurchaseOrder.belongsTo(User, {
+  foreignKey: "createdBy",
+  as: "creator",
+});
+
+PurchaseOrder.belongsTo(User, {
+  foreignKey: "updatedBy",
+  as: "updater",
+});
+
+DeliveryNote.belongsTo(User, {
+  foreignKey: "createdBy",
+  as: "creator",
+});
+
+DeliveryNote.belongsTo(User, {
+  foreignKey: "updatedBy",
+  as: "updater",
+});
+
+Receipt.belongsTo(User, {
+  foreignKey: "createdBy",
+  as: "creator",
+});
+
+Receipt.belongsTo(User, {
+  foreignKey: "updatedBy",
+  as: "updater",
+});
+
+ActivityLog.belongsTo(User, {
+  foreignKey: "userId",
+  as: "user",
 });
 
 
@@ -54,4 +90,5 @@ export {
   Customer,
   Supplier,
   DeliveryNoteItem,
+  ActivityLog
 };

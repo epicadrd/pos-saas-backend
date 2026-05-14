@@ -2,7 +2,9 @@ import {
   Product,
   PurchaseOrder,
   PurchaseOrderItem,
+  StockMovement,
   sequelize,
+  User,
 } from "../models/index.js";
 
 const generateOrderNumber = async (tenantId) => {
@@ -13,13 +15,81 @@ const generateOrderNumber = async (tenantId) => {
   return `OC-${String(count + 1).padStart(6, "0")}`;
 };
 
+const receiveOrderInventory = async ({ order, tenantId, userId, transaction }) => {
+  for (const item of order.items) {
+    if (!item.productId) continue;
+
+    const product = await Product.findOne({
+      where: {
+        id: item.productId,
+        tenantId,
+        isActive: true,
+      },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!product) continue;
+
+    if (product.productType === "service" || product.trackStock === false) {
+      continue;
+    }
+
+    const previousStock = Number(product.stock || 0);
+    const quantity = Number(item.quantity || 0);
+    const newStock = previousStock + quantity;
+
+    await product.update(
+      {
+        stock: newStock,
+        costPrice: Number(item.cost || 0),
+      },
+      { transaction }
+    );
+
+    await StockMovement.create(
+      {
+        tenantId,
+        productId: product.id,
+        userId,
+        type: "entry",
+        quantity,
+        previousStock,
+        newStock,
+        reason: `Entrada por orden de compra ${order.orderNumber}`,
+        referenceType: "purchase_order",
+        referenceId: order.id,
+        referenceNumber: order.orderNumber,
+      },
+      { transaction }
+    );
+  }
+};
+
 export const getPurchaseOrders = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
 
     const orders = await PurchaseOrder.findAll({
       where: { tenantId },
-      include: [{ model: PurchaseOrderItem, as: "items" }],
+      include: [
+        {
+          model: PurchaseOrderItem,
+          as: "items",
+          where: { tenantId },
+          required: false,
+        },
+        {
+          model: User,
+          as: "creator",
+          attributes: ["id", "name", "email", "role"],
+        },
+        {
+          model: User,
+          as: "updater",
+          attributes: ["id", "name", "email", "role"],
+        },
+      ],
       order: [["createdAt", "DESC"]],
     });
 
@@ -37,6 +107,7 @@ export const createPurchaseOrder = async (req, res) => {
 
   try {
     const tenantId = req.user.tenantId;
+    const userId = req.user?.id || null;
 
     const {
       supplierName,
@@ -51,9 +122,7 @@ export const createPurchaseOrder = async (req, res) => {
 
     if (!supplierName) {
       await transaction.rollback();
-      return res.status(400).json({
-        message: "El suplidor es obligatorio",
-      });
+      return res.status(400).json({ message: "El suplidor es obligatorio" });
     }
 
     if (!items.length) {
@@ -99,6 +168,8 @@ export const createPurchaseOrder = async (req, res) => {
         total,
         notes,
         status,
+        createdBy: userId,
+        updatedBy: userId,
       },
       { transaction }
     );
@@ -106,38 +177,45 @@ export const createPurchaseOrder = async (req, res) => {
     for (const item of formattedItems) {
       await PurchaseOrderItem.create(
         {
+          tenantId,
           purchaseOrderId: order.id,
           ...item,
         },
         { transaction }
       );
+    }
 
-      if (item.productId && status === "received") {
-        const product = await Product.findOne({
-          where: {
-            id: item.productId,
-            tenantId,
-            isActive: true,
-          },
-          transaction,
-        });
+    const orderWithItems = await PurchaseOrder.findByPk(order.id, {
+      include: [{
+        model: PurchaseOrderItem,
+        as: "items",
+        where: { tenantId },
+        required: false,
+      }],
+      transaction,
+    });
 
-        if (product) {
-          await product.update(
-            {
-              stock: Number(product.stock) + Number(item.quantity),
-              costPrice: Number(item.cost),
-            },
-            { transaction }
-          );
-        }
-      }
+    if (status === "received") {
+      await receiveOrderInventory({
+        order: orderWithItems,
+        tenantId,
+        userId,
+        transaction,
+      });
     }
 
     await transaction.commit();
 
-    const createdOrder = await PurchaseOrder.findByPk(order.id, {
-      include: [{ model: PurchaseOrderItem, as: "items" }],
+    const createdOrder = await PurchaseOrder.findOne({
+      where: { id: order.id, tenantId },
+      include: [
+        {
+          model: PurchaseOrderItem,
+          as: "items",
+          where: { tenantId },
+          required: false,
+        },
+      ],
     });
 
     return res.status(201).json({
@@ -158,20 +236,27 @@ export const updatePurchaseOrderStatus = async (req, res) => {
 
   try {
     const tenantId = req.user.tenantId;
+    const userId = req.user?.id || null;
     const { id } = req.params;
     const { status } = req.body;
 
     if (!["draft", "sent", "received", "cancelled"].includes(status)) {
       await transaction.rollback();
-      return res.status(400).json({
-        message: "Estado inválido",
-      });
+      return res.status(400).json({ message: "Estado inválido" });
     }
 
     const order = await PurchaseOrder.findOne({
       where: { id, tenantId },
-      include: [{ model: PurchaseOrderItem, as: "items" }],
+      include: [
+        {
+          model: PurchaseOrderItem,
+          as: "items",
+          where: { tenantId },
+          required: false,
+        },
+      ],
       transaction,
+      lock: transaction.LOCK.UPDATE,
     });
 
     if (!order) {
@@ -191,31 +276,15 @@ export const updatePurchaseOrderStatus = async (req, res) => {
     }
 
     if (previousStatus !== "received" && status === "received") {
-      for (const item of order.items) {
-        if (item.productId) {
-          const product = await Product.findOne({
-            where: {
-              id: item.productId,
-              tenantId,
-              isActive: true,
-            },
-            transaction,
-          });
-
-          if (product) {
-            await product.update(
-              {
-                stock: Number(product.stock) + Number(item.quantity),
-                costPrice: Number(item.cost),
-              },
-              { transaction }
-            );
-          }
-        }
-      }
+      await receiveOrderInventory({
+        order,
+        tenantId,
+        userId,
+        transaction,
+      });
     }
 
-    await order.update({ status }, { transaction });
+    await order.update({ status, updatedBy: userId }, { transaction });
 
     await transaction.commit();
 
@@ -254,7 +323,10 @@ export const deletePurchaseOrder = async (req, res) => {
     }
 
     await PurchaseOrderItem.destroy({
-      where: { purchaseOrderId: order.id },
+      where: {
+        purchaseOrderId: order.id,
+        tenantId,
+      },
     });
 
     await order.destroy();

@@ -28,7 +28,17 @@ export const Tenant = sequelize.define("Tenant", {
     allowNull: true,
   },
   subscriptionStatus: {
-    type: DataTypes.ENUM("inactive", "active", "past_due", "canceled"),
+    type: DataTypes.ENUM(
+      "inactive",
+      "trialing",
+      "active",
+      "past_due",
+      "unpaid",
+      "canceled",
+      "incomplete",
+      "incomplete_expired",
+      "paused"
+    ),
     defaultValue: "inactive",
   },
   stripeCustomerId: {
@@ -102,5 +112,35 @@ deliveryNoteDigits: {
   type: DataTypes.INTEGER,
   allowNull: false,
   defaultValue: 6,
+},
+
+plan: {
+  type: DataTypes.ENUM("emprendedor", "pyme", "empresarial"),
+  allowNull: true,
+},
+
+stripePriceId: {
+  type: DataTypes.STRING,
+  allowNull: true,
+},
+
+subscriptionCurrentPeriodEnd: {
+  type: DataTypes.DATE,
+  allowNull: true,
+},
+
+paymentGraceEndsAt: {
+  type: DataTypes.DATE,
+  allowNull: true,
+},
+
+cancelAtPeriodEnd: {
+  type: DataTypes.BOOLEAN,
+  defaultValue: false,
+},
+
+subscriptionCancelAt: {
+  type: DataTypes.DATE,
+  allowNull: true,
 },
 });

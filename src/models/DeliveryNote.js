@@ -74,6 +74,16 @@ export const DeliveryNote = sequelize.define("DeliveryNote", {
     type: DataTypes.DECIMAL(12, 2),
     defaultValue: 0,
   },
+
+  createdBy: {
+  type: DataTypes.INTEGER,
+  allowNull: true,
+},
+
+  updatedBy: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
 });
 
 Tenant.hasMany(DeliveryNote, { foreignKey: "tenantId" });

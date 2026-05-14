@@ -1,11 +1,13 @@
 import jwt from "jsonwebtoken";
-import { Product } from "../models/index.js";
+import { Product, User } from "../models/index.js";
 
 const getLowStockNotifications = async (tenantId) => {
   const products = await Product.findAll({
     where: {
       tenantId,
       isActive: true,
+      productType: "product",
+      trackStock: true,
     },
   });
 
@@ -41,7 +43,20 @@ export const streamNotifications = async (req, res) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-    const tenantId = decoded.tenantId;
+
+    const user = await User.findOne({
+      where: {
+        id: decoded.id,
+        tenantId: decoded.tenantId,
+        isActive: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(401).end();
+    }
+
+    const tenantId = user.tenantId;
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -49,8 +64,12 @@ export const streamNotifications = async (req, res) => {
     res.flushHeaders?.();
 
     const sendNotifications = async () => {
-      const notifications = await getLowStockNotifications(tenantId);
-      res.write(`data: ${JSON.stringify(notifications)}\n\n`);
+      try {
+        const notifications = await getLowStockNotifications(tenantId);
+        res.write(`data: ${JSON.stringify(notifications)}\n\n`);
+      } catch (error) {
+        console.log("SEND NOTIFICATIONS ERROR:", error);
+      }
     };
 
     await sendNotifications();

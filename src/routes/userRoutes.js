@@ -6,12 +6,13 @@ import {
   updateUser,
 } from "../controllers/userController.js";
 import { protect, requireRole } from "../middlewares/authMiddleware.js";
+import {requireActiveSubscription} from "../middlewares/subscriptionMiddleware.js";
 
 const router = express.Router();
 
-router.get("/", protect, requireRole("master"), getUsers);
-router.post("/", protect, requireRole("master"), createUser);
-router.put("/:id", protect, requireRole("master"), updateUser);
-router.patch("/:id/deactivate", protect, requireRole("master"), deactivateUser);
+router.get("/", protect, requireRole("master"), requireActiveSubscription, getUsers);
+router.post("/", protect, requireRole("master"), requireActiveSubscription,  createUser);
+router.put("/:id", protect, requireRole("master"), requireActiveSubscription, updateUser);
+router.patch("/:id/deactivate", protect, requireRole("master"), requireActiveSubscription, deactivateUser);
 
 export default router;

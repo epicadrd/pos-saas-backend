@@ -17,32 +17,65 @@ import purchaseOrderRoutes from "./routes/purchaseOrderRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import customerRoutes from "./routes/customerRoutes.js";
 import supplierRoutes from "./routes/supplierRoutes.js";
-import { sequelize } from "./models/index.js";
 import userRoutes from "./routes/userRoutes.js";
+import activityLogRoutes from "./routes/activityLogRoutes.js";
+import dashboardRoutes from "./routes/dashboardRoutes.js";
+import { sequelize } from "./models/index.js";
 
 dotenv.config();
 
 const app = express();
 
-app.use(helmet());
+app.set("trust proxy", 1);
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  })
+);
+
+const allowedOrigins = (process.env.APP_URL || "http://localhost:5173")
+  .split(",")
+  .map((url) => url.trim());
 
 app.use(
   cors({
-    origin: process.env.APP_URL || "http://localhost:5173",
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Origen no permitido por CORS"));
+    },
     credentials: true,
   })
 );
 
 app.use(cookieParser());
 
+/*
+  IMPORTANTE:
+  Stripe webhook debe ir ANTES de express.json(),
+  porque Stripe necesita el raw body para validar la firma.
+*/
+app.use("/api/webhooks", webhookRoutes);
+
 app.use(express.json({ limit: "8mb" }));
 app.use(express.urlencoded({ extended: true, limit: "8mb" }));
-app.use(morgan("dev"));
+
+if (process.env.NODE_ENV !== "test") {
+  app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+}
+
+app.get("/", (req, res) => {
+  res.json({
+    ok: true,
+    message: "POS SaaS Backend funcionando correctamente",
+  });
+});
 
 app.use("/api/auth", authRoutes);
 app.use("/api/billing", billingRoutes);
-app.use("/webhooks", webhookRoutes);
-
 app.use("/api/products", productRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/quotes", quoteRoutes);
@@ -53,13 +86,23 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/customers", customerRoutes);
 app.use("/api/suppliers", supplierRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/activity-logs", activityLogRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
+app.use((req, res) => {
+  res.status(404).json({
+    message: "Ruta no encontrada",
+  });
+});
 
+app.use((error, req, res, next) => {
+  console.error("GLOBAL ERROR:", error);
 
-app.get("/", (req, res) => {
-  res.json({
-    ok: true,
-    message: "POS SaaS Backend funcionando correctamente",
+  res.status(error.status || 500).json({
+    message:
+      process.env.NODE_ENV === "production"
+        ? "Error interno del servidor"
+        : error.message || "Error interno del servidor",
   });
 });
 
@@ -74,10 +117,11 @@ const startServer = async () => {
     console.log("✅ Modelos sincronizados");
 
     app.listen(PORT, () => {
-      console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+      console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
     });
   } catch (error) {
     console.error("❌ Error iniciando servidor:", error);
+    process.exit(1);
   }
 };
 

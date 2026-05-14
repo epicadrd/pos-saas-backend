@@ -71,6 +71,16 @@ export const PurchaseOrder = sequelize.define("PurchaseOrder", {
     type: DataTypes.ENUM("draft", "sent", "received", "cancelled"),
     defaultValue: "draft",
   },
+
+  createdBy: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+
+  updatedBy: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
 });
 
 Tenant.hasMany(PurchaseOrder, { foreignKey: "tenantId" });

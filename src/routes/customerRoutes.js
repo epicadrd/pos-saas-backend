@@ -6,12 +6,13 @@ import {
   updateCustomer,
 } from "../controllers/customerController.js";
 import { protect } from "../middlewares/authMiddleware.js";
+import {requireActiveSubscription} from "../middlewares/subscriptionMiddleware.js";
 
 const router = express.Router();
 
-router.get("/", protect, getCustomers);
-router.post("/", protect, createCustomer);
-router.put("/:id", protect, updateCustomer);
-router.delete("/:id", protect, deleteCustomer);
+router.get("/", protect, requireActiveSubscription, getCustomers);
+router.post("/", protect, requireActiveSubscription, createCustomer);
+router.put("/:id", protect, requireActiveSubscription, updateCustomer);
+router.delete("/:id", protect, requireActiveSubscription, deleteCustomer);
 
 export default router;

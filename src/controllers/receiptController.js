@@ -1,11 +1,53 @@
-import { Invoice, Receipt, sequelize } from "../models/index.js";
+import { Invoice, Receipt, sequelize, User } from "../models/index.js";
 
-const generateReceiptNumber = async (tenantId) => {
+const toNumber = (value, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const generateReceiptNumber = async (tenantId, transaction) => {
   const count = await Receipt.count({
     where: { tenantId },
+    transaction,
   });
 
   return `REC-${String(count + 1).padStart(6, "0")}`;
+};
+
+const recalculateInvoicePaymentStatus = async ({ invoice, transaction }) => {
+  const paidReceipts = await Receipt.findAll({
+    where: {
+      invoiceId: invoice.id,
+      tenantId: invoice.tenantId,
+      status: "paid",
+    },
+    transaction,
+  });
+
+  const amountPaid = paidReceipts.reduce(
+    (acc, receipt) => acc + toNumber(receipt.amount),
+    0
+  );
+
+  const total = toNumber(invoice.total);
+  const balance = Math.max(total - amountPaid, 0);
+
+  let status = "issued";
+
+  if (balance <= 0 && total > 0) {
+    status = "paid";
+  } else if (amountPaid > 0) {
+    status = "partial";
+  }
+
+  await invoice.update(
+    {
+      amountPaid,
+      balance,
+      status,
+    },
+    { transaction }
+  );
 };
 
 export const getReceipts = async (req, res) => {
@@ -17,6 +59,16 @@ export const getReceipts = async (req, res) => {
       include: [
         {
           model: Invoice,
+        },
+        {
+          model: User,
+          as: "creator",
+          attributes: ["id", "name", "email", "role"],
+        },
+        {
+          model: User,
+          as: "updater",
+          attributes: ["id", "name", "email", "role"],
         },
       ],
       order: [["createdAt", "DESC"]],
@@ -36,6 +88,7 @@ export const createReceipt = async (req, res) => {
 
   try {
     const tenantId = req.user.tenantId;
+    const userId = req.user?.id || null;
 
     const {
       invoiceId,
@@ -48,17 +101,26 @@ export const createReceipt = async (req, res) => {
       status = "paid",
     } = req.body;
 
-    if (!customerName) {
+    const cleanAmount = toNumber(amount);
+
+    if (!customerName?.trim()) {
       await transaction.rollback();
       return res.status(400).json({
         message: "El cliente es obligatorio",
       });
     }
 
-    if (!amount || Number(amount) <= 0) {
+    if (cleanAmount <= 0) {
       await transaction.rollback();
       return res.status(400).json({
         message: "El monto debe ser mayor a 0",
+      });
+    }
+
+    if (!["paid", "cancelled"].includes(status)) {
+      await transaction.rollback();
+      return res.status(400).json({
+        message: "Estado de recibo inválido",
       });
     }
 
@@ -71,6 +133,7 @@ export const createReceipt = async (req, res) => {
           tenantId,
         },
         transaction,
+        lock: transaction.LOCK.UPDATE,
       });
 
       if (!invoice) {
@@ -80,46 +143,59 @@ export const createReceipt = async (req, res) => {
         });
       }
 
-      const currentBalance = Number(invoice.balance || invoice.total || 0);
-
-      if (Number(amount) > currentBalance) {
+      if (invoice.status === "cancelled") {
         await transaction.rollback();
         return res.status(400).json({
-          message: "El monto no puede ser mayor al balance pendiente",
+          message: "No puedes registrar pagos a una factura anulada",
         });
       }
+
+        const currentBalance = toNumber(
+          invoice.balance !== null && invoice.balance !== undefined
+            ? invoice.balance
+            : invoice.total
+        );
+
+        if (invoice.status === "paid" || currentBalance <= 0) {
+          await transaction.rollback();
+          return res.status(400).json({
+            message: "Esta factura ya está pagada",
+          });
+        }
+
+        if (status === "paid" && cleanAmount > currentBalance) {
+          await transaction.rollback();
+          return res.status(400).json({
+            message: "El monto no puede ser mayor al balance pendiente",
+          });
+        }
     }
 
-    const receiptNumber = await generateReceiptNumber(tenantId);
+    const receiptNumber = await generateReceiptNumber(tenantId, transaction);
 
     const receipt = await Receipt.create(
       {
         tenantId,
         invoiceId: invoiceId || null,
         receiptNumber,
-        customerName,
+        customerName: customerName.trim(),
         concept: concept || "Pago de factura",
-        amount: Number(amount),
+        amount: cleanAmount,
         paymentMethod: paymentMethod || "cash",
         reference,
         notes,
         status,
+        createdBy: userId,
+        updatedBy: userId,
       },
       { transaction }
     );
 
     if (invoice && status === "paid") {
-      const paidAmount = Number(invoice.paidAmount || 0) + Number(amount);
-      const balance = Number(invoice.total || 0) - paidAmount;
-
-      await invoice.update(
-        {
-          paidAmount,
-          balance: balance < 0 ? 0 : balance,
-          status: balance <= 0 ? "paid" : "partial",
-        },
-        { transaction }
-      );
+      await recalculateInvoicePaymentStatus({
+        invoice,
+        transaction,
+      });
     }
 
     await transaction.commit();
@@ -133,7 +209,8 @@ export const createReceipt = async (req, res) => {
       receipt: createdReceipt,
     });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
+
     console.log("CREATE RECEIPT ERROR:", error);
     return res.status(500).json({
       message: "Error creando recibo",
@@ -151,6 +228,7 @@ export const deleteReceipt = async (req, res) => {
     const receipt = await Receipt.findOne({
       where: { id, tenantId },
       transaction,
+      lock: transaction.LOCK.UPDATE,
     });
 
     if (!receipt) {
@@ -160,32 +238,27 @@ export const deleteReceipt = async (req, res) => {
       });
     }
 
+    let invoice = null;
+
     if (receipt.invoiceId && receipt.status === "paid") {
-      const invoice = await Invoice.findOne({
+      invoice = await Invoice.findOne({
         where: {
           id: receipt.invoiceId,
           tenantId,
         },
         transaction,
+        lock: transaction.LOCK.UPDATE,
       });
-
-      if (invoice) {
-        const paidAmount = Number(invoice.paidAmount || 0) - Number(receipt.amount);
-        const safePaid = paidAmount < 0 ? 0 : paidAmount;
-        const balance = Number(invoice.total || 0) - safePaid;
-
-        await invoice.update(
-          {
-            paidAmount: safePaid,
-            balance,
-            status: safePaid <= 0 ? "draft" : balance <= 0 ? "paid" : "partial",
-          },
-          { transaction }
-        );
-      }
     }
 
     await receipt.destroy({ transaction });
+
+    if (invoice) {
+      await recalculateInvoicePaymentStatus({
+        invoice,
+        transaction,
+      });
+    }
 
     await transaction.commit();
 
@@ -193,7 +266,8 @@ export const deleteReceipt = async (req, res) => {
       message: "Recibo eliminado correctamente",
     });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
+
     console.log("DELETE RECEIPT ERROR:", error);
     return res.status(500).json({
       message: "Error eliminando recibo",
