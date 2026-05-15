@@ -71,7 +71,7 @@ const sendVerificationEmail = async (user) => {
 
   await sendBrevoEmail({
     to: user.email,
-    subject: "Confirma tu cuenta en Épica POS",
+    subject: "Confirma tu cuenta en Corex",
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;">
         <h2>Confirma tu cuenta</h2>

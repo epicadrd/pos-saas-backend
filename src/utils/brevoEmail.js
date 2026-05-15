@@ -14,7 +14,7 @@ export const sendBrevoEmail = async ({ to, subject, html }) => {
     },
     body: JSON.stringify({
       sender: {
-        name: process.env.BREVO_SENDER_NAME || "Épica POS",
+        name: process.env.BREVO_SENDER_NAME || "Corex",
         email: process.env.BREVO_SENDER_EMAIL,
       },
       to: [{ email: to }],

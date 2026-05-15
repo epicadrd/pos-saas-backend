@@ -70,15 +70,19 @@ export const createUser = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = await User.create({
-      tenantId: req.user.tenantId,
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      password: hashedPassword,
-      role,
-      isActive: true,
-      createdBy: req.user.id,
-    });
+      const user = await User.create({
+        tenantId: req.user.tenantId,
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password: hashedPassword,
+        role,
+        isActive: true,
+        createdBy: req.user.id,
+
+        emailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationExpires: null,
+      });
 
     return res.status(201).json({
       message: "Usuario creado correctamente",
