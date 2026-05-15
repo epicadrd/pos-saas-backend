@@ -217,7 +217,7 @@ export const createQuote = async (req, res) => {
       throw new Error("Debes agregar al menos un producto");
     }
 
-
+    const validStatuses = ["draft", "sent", "approved", "rejected"];
 
     if (!validStatuses.includes(status)) {
       throw new Error("Estado de cotización inválido");

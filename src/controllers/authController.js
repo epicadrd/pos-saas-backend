@@ -75,7 +75,7 @@ const sendVerificationEmail = async (user) => {
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;">
         <h2>Confirma tu cuenta</h2>
-        <p>Hola ${user.name}, gracias por registrarte en Épica POS.</p>
+        <p>Hola ${user.name}, gracias por registrarte en Corex.</p>
         <p>Haz clic en el siguiente botón para confirmar tu correo y activar tu cuenta.</p>
         <a href="${verifyUrl}" style="display:inline-block;background:#2563eb;color:white;padding:14px 22px;border-radius:10px;text-decoration:none;font-weight:bold;">
           Confirmar cuenta
