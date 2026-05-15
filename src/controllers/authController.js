@@ -67,7 +67,7 @@ const generateEmailVerification = () => {
 };
 
 const sendVerificationEmail = async (user) => {
-  const verifyUrl = `${process.env.FRONTEND_URL}/verificar-correo/${user.rawVerificationToken}`;
+  const verifyUrl = `${process.env.APP_URL}/verificar-correo/${user.rawVerificationToken}`;
 
   await sendBrevoEmail({
     to: user.email,

@@ -38,14 +38,18 @@ const allowedOrigins = (process.env.APP_URL || "http://localhost:5173")
   .split(",")
   .map((url) => url.trim());
 
+console.log("✅ CORS permitidos:", allowedOrigins);
+
 app.use(
   cors({
     origin(origin, callback) {
+      console.log("🌍 Origin recibido:", origin);
+
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      return callback(new Error("Origen no permitido por CORS"));
+      return callback(new Error(`Origen no permitido por CORS: ${origin}`));
     },
     credentials: true,
   })
