@@ -21,6 +21,8 @@ import userRoutes from "./routes/userRoutes.js";
 import activityLogRoutes from "./routes/activityLogRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import { sequelize } from "./models/index.js";
+import accountingRoutes from "./routes/accountingRoutes.js";
+
 
 dotenv.config();
 
@@ -92,6 +94,7 @@ app.use("/api/suppliers", supplierRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/activity-logs", activityLogRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/accounting", accountingRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
