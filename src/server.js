@@ -22,7 +22,7 @@ import activityLogRoutes from "./routes/activityLogRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import { sequelize } from "./models/index.js";
 import accountingRoutes from "./routes/accountingRoutes.js";
-
+import expenseRoutes from "./routes/expenseRoutes.js";
 
 dotenv.config();
 
@@ -95,6 +95,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/activity-logs", activityLogRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/accounting", accountingRoutes);
+app.use("/api/expenses", expenseRoutes);
 
 app.use((req, res) => {
   res.status(404).json({

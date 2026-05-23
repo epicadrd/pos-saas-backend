@@ -1,5 +1,5 @@
 import { Op, fn, col, literal } from "sequelize";
-import { Invoice, Receipt, PurchaseOrder } from "../models/index.js";
+import { Invoice, Receipt, PurchaseOrder, Expense } from "../models/index.js";
 
 const money = (value) => Number(value || 0);
 
@@ -33,6 +33,7 @@ export const getAccountingSummary = async (req, res) => {
       openPurchaseOrders,
       cashFlowTrend,
       recentReceipts,
+      expensesMonth,
     ] = await Promise.all([
       Invoice.sum("total", {
         where: {
@@ -120,16 +121,24 @@ export const getAccountingSummary = async (req, res) => {
           "createdAt",
         ],
       }),
+
+      Expense.sum("total", {
+        where: {
+          tenantId,
+          status: "paid",
+          expenseDate: { [Op.gte]: startOfMonth() },
+        },
+      }),
     ]);
 
-    const expensesMonth = 0;
-    const netProfit = money(collectedMonth) - money(expensesMonth);
+    const cleanExpensesMonth = money(expensesMonth);
+    const netProfit = money(collectedMonth) - cleanExpensesMonth;
 
     return res.json({
       summary: {
         incomeMonth: money(incomeMonth),
         collectedMonth: money(collectedMonth),
-        expensesMonth,
+        expensesMonth: cleanExpensesMonth,
         netProfit,
         accountsReceivable: money(accountsReceivable),
         overdueReceivable: money(overdueReceivable),

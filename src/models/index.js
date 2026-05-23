@@ -15,7 +15,7 @@ import { PurchaseOrderItem } from "./PurchaseOrderItem.js";
 import { Customer } from "./Customer.js";
 import { Supplier } from "./Supplier.js";
 import { ActivityLog } from "./ActivityLog.js";
-
+import { Expense } from "./Expense.js";
 
 Invoice.belongsTo(User, {
   foreignKey: "createdBy",
@@ -72,6 +72,8 @@ ActivityLog.belongsTo(User, {
   as: "user",
 });
 
+Expense.belongsTo(User, { foreignKey: "createdBy", as: "creator" });
+Expense.belongsTo(User, { foreignKey: "updatedBy", as: "updater" });
 
 export {
   sequelize,
@@ -90,5 +92,6 @@ export {
   Customer,
   Supplier,
   DeliveryNoteItem,
-  ActivityLog
+  ActivityLog,
+  Expense
 };
