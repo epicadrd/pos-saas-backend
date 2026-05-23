@@ -75,6 +75,16 @@ ActivityLog.belongsTo(User, {
 Expense.belongsTo(User, { foreignKey: "createdBy", as: "creator" });
 Expense.belongsTo(User, { foreignKey: "updatedBy", as: "updater" });
 
+Expense.belongsTo(Supplier, {
+  foreignKey: "supplierId",
+  as: "supplier",
+});
+
+Supplier.hasMany(Expense, {
+  foreignKey: "supplierId",
+  as: "expenses",
+});
+
 export {
   sequelize,
   Tenant,
@@ -93,5 +103,5 @@ export {
   Supplier,
   DeliveryNoteItem,
   ActivityLog,
-  Expense
+  Expense,
 };

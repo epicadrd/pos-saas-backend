@@ -13,6 +13,11 @@ export const Expense = sequelize.define("Expense", {
   supplierName: { type: DataTypes.STRING, allowNull: true },
   supplierRnc: { type: DataTypes.STRING, allowNull: true },
 
+supplierId: {
+  type: DataTypes.INTEGER,
+  allowNull: true,
+},
+
   expenseDate: { type: DataTypes.DATEONLY, allowNull: false },
 
   paymentMethod: {
@@ -33,6 +38,8 @@ export const Expense = sequelize.define("Expense", {
 
   createdBy: { type: DataTypes.INTEGER, allowNull: true },
   updatedBy: { type: DataTypes.INTEGER, allowNull: true },
+
+
 });
 
 Tenant.hasMany(Expense, { foreignKey: "tenantId" });
