@@ -24,6 +24,7 @@ import { sequelize } from "./models/index.js";
 import accountingRoutes from "./routes/accountingRoutes.js";
 import expenseRoutes from "./routes/expenseRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
+import accountsReceivableRoutes from "./routes/accountsReceivableRoutes.js";
 
 dotenv.config();
 
@@ -98,6 +99,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/accounting", accountingRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/accounts-receivable", accountsReceivableRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
