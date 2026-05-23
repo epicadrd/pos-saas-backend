@@ -47,6 +47,16 @@ PurchaseOrder.belongsTo(User, {
   as: "updater",
 });
 
+PurchaseOrder.belongsTo(Supplier, {
+  foreignKey: "supplierId",
+  as: "supplier",
+});
+
+Supplier.hasMany(PurchaseOrder, {
+  foreignKey: "supplierId",
+  as: "purchaseOrders",
+});
+
 DeliveryNote.belongsTo(User, {
   foreignKey: "createdBy",
   as: "creator",
