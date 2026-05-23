@@ -127,7 +127,7 @@ const startServer = async () => {
     await sequelize.authenticate();
     console.log("✅ Base de datos conectada");
 
-    await sequelize.sync({alter:true});
+    await sequelize.sync();
     console.log("✅ Modelos sincronizados");
 
     app.listen(PORT, () => {
