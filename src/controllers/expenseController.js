@@ -171,32 +171,21 @@ export const createExpense = async (req, res) => {
 
     const expense = await Expense.create({
       tenantId,
-
       expenseNumber: await buildExpenseNumber(tenantId),
-
       category: category.trim(),
-
       description: description.trim(),
-
       supplierId: supplierId || null,
-
       supplierName,
-
       supplierRnc,
-
+      ncf: ncf?.trim()?.toUpperCase() || null,
       expenseDate,
-
       paymentMethod: paymentMethod || "cash",
-
       status: status || "paid",
-
       notes,
-
       ...amounts,
-
       createdBy: req.user.id,
-
       updatedBy: req.user.id,
+      
     });
 
     await logActivity({
