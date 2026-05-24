@@ -6,6 +6,7 @@ export const Expense = sequelize.define("Expense", {
   id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
   tenantId: { type: DataTypes.INTEGER, allowNull: false },
   expenseNumber: { type: DataTypes.STRING, allowNull: false },
+  ncf: { type: DataTypes.STRING, allowNull: true },
 
   category: { type: DataTypes.STRING, allowNull: false },
   description: { type: DataTypes.STRING, allowNull: false },

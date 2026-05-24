@@ -62,6 +62,11 @@ export const getExpenses = async (req, res) => {
     if (search) {
       where[Op.or] = [
         {
+          ncf: {
+            [Op.like]: `%${search}%`,
+          },
+        },
+        {
           expenseNumber: {
             [Op.like]: `%${search}%`,
           },
@@ -131,6 +136,7 @@ export const createExpense = async (req, res) => {
       supplierId,
       supplierName,
       supplierRnc,
+      ncf,
       expenseDate,
       paymentMethod,
       status,
