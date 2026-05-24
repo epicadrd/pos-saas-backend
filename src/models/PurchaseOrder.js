@@ -68,8 +68,8 @@ export const PurchaseOrder = sequelize.define("PurchaseOrder", {
   },
 
   status: {
-    type: DataTypes.ENUM("draft", "sent", "received", "cancelled"),
-    defaultValue: "draft",
+  type: DataTypes.ENUM("draft", "sent", "received", "cancelled", "paid"),
+  defaultValue: "draft",
   },
 
   createdBy: {

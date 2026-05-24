@@ -166,3 +166,44 @@ export const getAccountsPayable = async (req, res) => {
     });
   }
 };
+
+export const markPurchaseOrderAsPaid = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+
+    const order = await PurchaseOrder.findOne({
+      where: {
+        id: req.params.id,
+        tenantId,
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        message: "Cuenta por pagar no encontrada",
+      });
+    }
+
+    if (order.status === "paid") {
+      return res.status(400).json({
+        message: "Esta cuenta ya está marcada como pagada",
+      });
+    }
+
+    await order.update({
+      status: "paid",
+      updatedBy: req.user.id,
+    });
+
+    res.json({
+      message: "Cuenta marcada como pagada",
+      order,
+    });
+  } catch (error) {
+    console.log("MARK ACCOUNT PAYABLE PAID ERROR:", error);
+
+    res.status(500).json({
+      message: "Error marcando cuenta como pagada",
+    });
+  }
+};
