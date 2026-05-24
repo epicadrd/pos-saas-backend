@@ -143,4 +143,39 @@ subscriptionCancelAt: {
   type: DataTypes.DATE,
   allowNull: true,
 },
+
+legalName: {
+  type: DataTypes.STRING,
+  allowNull: true,
+},
+
+companyType: {
+  type: DataTypes.STRING,
+  allowNull: true,
+},
+
+website: {
+  type: DataTypes.STRING,
+  allowNull: true,
+},
+
+industry: {
+  type: DataTypes.STRING,
+  allowNull: true,
+},
+
+legalAddress: {
+  type: DataTypes.TEXT,
+  allowNull: true,
+},
+
+clientEmail: {
+  type: DataTypes.STRING,
+  allowNull: true,
+},
+
+clientAddress: {
+  type: DataTypes.TEXT,
+  allowNull: true,
+},
 });

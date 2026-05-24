@@ -26,6 +26,7 @@ import expenseRoutes from "./routes/expenseRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import accountsReceivableRoutes from "./routes/accountsReceivableRoutes.js";
 import accountsPayableRoutes from "./routes/accountsPayableRoutes.js";
+import accountSettingsRoutes from "./routes/accountSettingsRoutes.js";
 
 dotenv.config();
 
@@ -102,6 +103,7 @@ app.use("/api/expenses", expenseRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/accounts-receivable", accountsReceivableRoutes);
 app.use("/api/accounts-payable", accountsPayableRoutes);
+app.use("/api/account-settings", accountSettingsRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
