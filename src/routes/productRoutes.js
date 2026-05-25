@@ -5,6 +5,7 @@ import {
   deleteProduct,
   getProductMovements,
   getProducts,
+  importProducts,
   reactivateProduct,
   updateProduct,
 } from "../controllers/productController.js";
@@ -18,6 +19,8 @@ router.get("/:id/movements", protect, requireActiveSubscription, getProductMovem
 
 router.post("/", protect, requireActiveSubscription, createProduct);
 router.post("/:id/movements", protect, requireActiveSubscription,  createStockMovement);
+
+router.post("/import", protect, requireActiveSubscription, importProducts);
 
 router.put("/:id", protect, requireActiveSubscription, updateProduct);
 

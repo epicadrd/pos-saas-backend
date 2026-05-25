@@ -613,3 +613,211 @@ export const reactivateProduct = async (req, res) => {
     });
   }
 };
+
+const cleanText = (value) => {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+};
+
+const normalizeImportedProduct = (row) => {
+  const productType = row.productType === "service" ? "service" : "product";
+  const trackStock =
+    productType === "service" ? false : row.trackStock === false ? false : true;
+
+  return {
+    name: cleanText(row.name),
+    sku: cleanText(row.sku) || null,
+    barcode: cleanText(row.barcode) || null,
+    description: cleanText(row.description) || null,
+    category: cleanText(row.category) || null,
+    unit: cleanText(row.unit) || (productType === "service" ? "servicio" : "unidad"),
+    productType,
+    trackStock,
+    costPrice: toNumber(row.costPrice),
+    salePrice: toNumber(row.salePrice),
+    stock: trackStock ? toInteger(row.stock) : 0,
+    minStock: trackStock ? toInteger(row.minStock) : 0,
+    isActive: true,
+  };
+};
+
+export const importProducts = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const tenantId = req.user.tenantId;
+    const userId = req.user?.id || null;
+
+    const rows = Array.isArray(req.body.products) ? req.body.products : [];
+    const updateExisting = req.body.updateExisting === true;
+
+    if (!rows.length) {
+      await transaction.rollback();
+      return res.status(400).json({
+        message: "No hay productos para importar",
+      });
+    }
+
+    const result = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: [],
+    };
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const rowNumber = index + 2;
+      const payload = normalizeImportedProduct(rows[index]);
+
+      if (!payload.name) {
+        result.skipped += 1;
+        result.errors.push({
+          row: rowNumber,
+          message: "El nombre del producto es obligatorio",
+        });
+        continue;
+      }
+
+      if (payload.stock < 0 || payload.minStock < 0) {
+        result.skipped += 1;
+        result.errors.push({
+          row: rowNumber,
+          message: "El stock y stock mínimo no pueden ser negativos",
+        });
+        continue;
+      }
+
+      if (payload.costPrice < 0 || payload.salePrice < 0) {
+        result.skipped += 1;
+        result.errors.push({
+          row: rowNumber,
+          message: "El costo y precio no pueden ser negativos",
+        });
+        continue;
+      }
+
+      let existingProduct = null;
+
+      if (payload.sku) {
+        existingProduct = await Product.findOne({
+          where: {
+            tenantId,
+            sku: payload.sku,
+            isActive: true,
+          },
+          transaction,
+          lock: transaction.LOCK.UPDATE,
+        });
+      }
+
+      if (!existingProduct && payload.barcode) {
+        existingProduct = await Product.findOne({
+          where: {
+            tenantId,
+            barcode: payload.barcode,
+            isActive: true,
+          },
+          transaction,
+          lock: transaction.LOCK.UPDATE,
+        });
+      }
+
+      if (existingProduct && !updateExisting) {
+        result.skipped += 1;
+        result.errors.push({
+          row: rowNumber,
+          message: `Producto duplicado por SKU o código de barras: ${
+            payload.sku || payload.barcode
+          }`,
+        });
+        continue;
+      }
+
+      if (existingProduct && updateExisting) {
+        const previousStock = Number(existingProduct.stock || 0);
+        const newStock = Number(payload.stock || 0);
+
+        await existingProduct.update(payload, { transaction });
+
+        if (payload.trackStock && previousStock !== newStock) {
+          await StockMovement.create(
+            {
+              tenantId,
+              productId: existingProduct.id,
+              userId,
+              type: "adjustment",
+              quantity: Math.abs(newStock - previousStock),
+              previousStock,
+              newStock,
+              reason: "Ajuste por importación de inventario",
+              referenceType: "system",
+              referenceId: existingProduct.id,
+              referenceNumber: existingProduct.sku || null,
+            },
+            { transaction }
+          );
+        }
+
+        result.updated += 1;
+        continue;
+      }
+
+      const product = await Product.create(
+        {
+          tenantId,
+          ...payload,
+        },
+        { transaction }
+      );
+
+      if (!product.sku) {
+        const generatedSku =
+          product.productType === "service"
+            ? `SERV-${String(product.id).padStart(6, "0")}`
+            : `PROD-${String(product.id).padStart(6, "0")}`;
+
+        await product.update(
+          {
+            sku: generatedSku,
+          },
+          { transaction }
+        );
+      }
+
+      if (product.trackStock && Number(product.stock) > 0) {
+        await StockMovement.create(
+          {
+            tenantId,
+            productId: product.id,
+            userId,
+            type: "entry",
+            quantity: Number(product.stock),
+            previousStock: 0,
+            newStock: Number(product.stock),
+            reason: "Stock inicial por importación",
+            referenceType: "system",
+            referenceId: product.id,
+            referenceNumber: product.sku || null,
+          },
+          { transaction }
+        );
+      }
+
+      result.created += 1;
+    }
+
+    await transaction.commit();
+
+    return res.json({
+      message: "Importación procesada correctamente",
+      ...result,
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.log("IMPORT PRODUCTS ERROR:", error);
+
+    return res.status(500).json({
+      message: "Error importando inventario",
+    });
+  }
+};
