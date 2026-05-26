@@ -43,13 +43,19 @@ export const Receipt = sequelize.define("Receipt", {
   },
 
   paymentMethod: {
-    type: DataTypes.ENUM("cash", "transfer", "card", "check", "other"),
+    type: DataTypes.ENUM("cash", "transfer", "deposit", "card", "check", "other"),
     defaultValue: "cash",
   },
 
   reference: {
     type: DataTypes.STRING,
     allowNull: true,
+  },
+
+  receiptDate: {
+    type: DataTypes.DATEONLY,
+    allowNull: false,
+    defaultValue: DataTypes.NOW,
   },
 
   notes: {

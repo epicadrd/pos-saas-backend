@@ -97,6 +97,7 @@ export const createReceipt = async (req, res) => {
       amount,
       paymentMethod,
       reference,
+      receiptDate,
       notes,
       status = "paid",
     } = req.body;
@@ -183,6 +184,7 @@ export const createReceipt = async (req, res) => {
         amount: cleanAmount,
         paymentMethod: paymentMethod || "cash",
         reference,
+        receiptDate: receiptDate || new Date(),
         notes,
         status,
         createdBy: userId,
