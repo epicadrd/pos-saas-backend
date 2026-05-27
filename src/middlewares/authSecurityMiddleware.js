@@ -3,8 +3,8 @@ import { RedisStore } from "rate-limit-redis";
 import { redis } from "../config/redis.js";
 
 const AUTH_WINDOW_MS = 15 * 60 * 1000; // 15 minutos
-const LOGIN_BLOCK_SECONDS = 10 * 60; // 10 minutos
-const MAX_FAILED_LOGIN_ATTEMPTS = 8;
+const LOGIN_BLOCK_SECONDS = 5 * 60; // 5 minutos
+const MAX_FAILED_LOGIN_ATTEMPTS = 7;
 
 const getClientIp = (req) => {
   const forwarded = req.headers["x-forwarded-for"];
@@ -45,10 +45,10 @@ export const authRateLimit = rateLimit({
 
 export const loginRateLimit = rateLimit({
   windowMs: AUTH_WINDOW_MS,
-  limit: 10,
+  limit: 50,
   standardHeaders: true,
   legacyHeaders: false,
-  store: createStore("corex:auth:login:"),
+  store: createStore("corex:auth:login:v2:"),
   keyGenerator: (req) => {
     const ip = getClientIp(req);
     const email = normalizeEmail(req.body?.email);
@@ -56,7 +56,7 @@ export const loginRateLimit = rateLimit({
     return `${ip}:${email || "sin-email"}`;
   },
   message: {
-    message: "Demasiados intentos de inicio de sesión. Intenta nuevamente en unos minutos.",
+    message: "Demasiadas solicitudes de inicio de sesión. Intenta nuevamente en unos minutos.",
   },
 });
 
@@ -109,7 +109,7 @@ const loginFailureKey = (req) => {
   const ip = getClientIp(req);
   const email = normalizeEmail(req.body?.email);
 
-  return `corex:auth:failed-login:${ip}:${email || "sin-email"}`;
+  return `corex:auth:failed-login:v2:${ip}:${email || "sin-email"}`;
 };
 
 export const loginSecurityGuard = async (req, res, next) => {
@@ -120,11 +120,19 @@ export const loginSecurityGuard = async (req, res, next) => {
     const blockedUntil = await redis.get(`${key}:blockedUntil`);
 
     if (blockedUntil && Number(blockedUntil) > Date.now()) {
-      const minutesLeft = Math.ceil((Number(blockedUntil) - Date.now()) / 60000);
+      const remainingMs = Number(blockedUntil) - Date.now();
+
+      const minutesLeft = Math.floor(remainingMs / 60000);
+      const secondsLeft = Math.ceil((remainingMs % 60000) / 1000);
+
+      const retryMessage =
+        minutesLeft > 0 ? `${minutesLeft}m ${secondsLeft}s` : `${secondsLeft}s`;
 
       return res.status(429).json({
-        message: `Por seguridad, el acceso fue bloqueado temporalmente. Intenta nuevamente en ${minutesLeft} minuto(s).`,
+        message: `Por seguridad, el acceso fue bloqueado temporalmente. Intenta nuevamente en ${retryMessage}.`,
         blockedMinutesLeft: minutesLeft,
+        blockedSecondsLeft: secondsLeft,
+        retryAfter: retryMessage,
       });
     }
 
