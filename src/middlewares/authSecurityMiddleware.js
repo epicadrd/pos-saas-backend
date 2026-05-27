@@ -48,7 +48,7 @@ export const loginRateLimit = rateLimit({
   limit: 50,
   standardHeaders: true,
   legacyHeaders: false,
-  store: createStore("corex:auth:login:v2:"),
+  store: createStore("corex:auth:login:v3:"),
   keyGenerator: (req) => {
     const ip = getClientIp(req);
     const email = normalizeEmail(req.body?.email);
@@ -109,7 +109,7 @@ const loginFailureKey = (req) => {
   const ip = getClientIp(req);
   const email = normalizeEmail(req.body?.email);
 
-  return `corex:auth:failed-login:v2:${ip}:${email || "sin-email"}`;
+  return `corex:auth:failed-login:v3:${ip}:${email || "sin-email"}`;
 };
 
 export const loginSecurityGuard = async (req, res, next) => {
