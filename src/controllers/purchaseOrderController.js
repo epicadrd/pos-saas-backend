@@ -79,16 +79,20 @@ export const getPurchaseOrders = async (req, res) => {
           where: { tenantId },
           required: false,
         },
-        {
+       {
           model: User,
           as: "creator",
+          where: { tenantId },
+          required: false,
           attributes: ["id", "name", "email", "role"],
         },
         {
           model: User,
           as: "updater",
+          where: { tenantId },
+          required: false,
           attributes: ["id", "name", "email", "role"],
-        },
+        }
       ],
       order: [["createdAt", "DESC"]],
     });

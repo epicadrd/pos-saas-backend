@@ -235,9 +235,9 @@ export const getInvoices = async (req, res) => {
     const invoices = await Invoice.findAll({
       where,
       include: [
-        { model: InvoiceItem, as: "items" },
-        { model: User, as: "creator", attributes: ["id", "name", "email", "role"] },
-        { model: User, as: "updater", attributes: ["id", "name", "email", "role"] },
+        { model: InvoiceItem, as: "items", where: { tenantId }, required: false},
+        { model: User, as: "creator", where: { tenantId }, required: false, attributes: ["id", "name", "email", "role"],},
+        { model: User, as: "updater", where: { tenantId }, required: false, attributes: ["id", "name", "email", "role"],},
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -256,7 +256,9 @@ export const getInvoiceById = async (req, res) => {
 
     const invoice = await Invoice.findOne({
       where: { id, tenantId },
-      include: [{ model: InvoiceItem, as: "items" }],
+      include: [
+    { model: InvoiceItem, as: "items", where: { tenantId }, required: false },
+  ],
     });
 
     if (!invoice) {
@@ -537,7 +539,8 @@ export const issueDraftInvoice = async (req, res) => {
 
     const invoice = await Invoice.findOne({
       where: { id, tenantId },
-      include: [{ model: InvoiceItem, as: "items" }],
+      include: [
+      {model: InvoiceItem, as: "items", where: { tenantId },required: false,},],
       transaction,
       lock: transaction.LOCK.UPDATE,
     });

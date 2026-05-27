@@ -6,16 +6,16 @@ import {
   deleteSupplier,
   toggleSupplierStatus
 } from "../controllers/supplierController.js";
-import { protect } from "../middlewares/authMiddleware.js";
+import { protect, requireRole } from "../middlewares/authMiddleware.js";
 import {requireActiveSubscription} from "../middlewares/subscriptionMiddleware.js";
 
 const router = express.Router();
 
-router.get("/", protect, requireActiveSubscription, getSuppliers);
-router.post("/", protect, requireActiveSubscription, createSupplier);
-router.put("/:id", protect, requireActiveSubscription, updateSupplier);
-router.delete("/:id", protect, requireActiveSubscription, deleteSupplier);
-router.patch("/:id/toggle", protect, requireActiveSubscription, toggleSupplierStatus);
+router.get("/", protect, requireActiveSubscription, requireRole("master", "admin"), getSuppliers);
+router.post("/", protect, requireActiveSubscription, requireRole("master", "admin"), createSupplier);
+router.put("/:id", protect, requireActiveSubscription, requireRole("master", "admin"), updateSupplier);
+router.delete("/:id", protect, requireActiveSubscription, requireRole("master", "admin"), deleteSupplier);
+router.patch("/:id/toggle", protect, requireActiveSubscription, requireRole("master", "admin"), toggleSupplierStatus);
 
 
 export default router;

@@ -89,9 +89,10 @@ export const getAccountsPayable = async (req, res) => {
             {
               model: Supplier,
               as: "supplier",
-              attributes: ["id", "name", "rnc", "phone", "email"],
+              where: { tenantId },
               required: false,
-            },
+              attributes: ["id", "name", "rnc", "phone", "email"],
+            }
           ],
           order: [
             ["dueDate", "ASC"],

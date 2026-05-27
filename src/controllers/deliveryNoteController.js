@@ -266,18 +266,9 @@ export const getDeliveryNotes = async (req, res) => {
     const deliveryNotes = await DeliveryNote.findAll({
       where: { tenantId },
       include: [
-      { model: DeliveryNoteItem, as: "items" },
-      {
-        model: User,
-        as: "creator",
-        attributes: ["id", "name", "email", "role"],
-      },
-      {
-        model: User,
-        as: "updater",
-        attributes: ["id", "name", "email", "role"],
-      },
-    ],
+      {model: DeliveryNoteItem,as: "items",where: { tenantId },required: false,},
+      {model: User, as: "creator", where: { tenantId }, required: false, attributes: ["id", "name", "email", "role"],},
+      {model: User, as: "updater", where: { tenantId }, required: false, attributes: ["id", "name", "email", "role"],},],
       order: [["createdAt", "DESC"]],
     });
 
@@ -295,7 +286,7 @@ export const getDeliveryNoteById = async (req, res) => {
 
     const deliveryNote = await DeliveryNote.findOne({
       where: { id, tenantId },
-      include: [{ model: DeliveryNoteItem, as: "items" }],
+      include: [{model: DeliveryNoteItem, as: "items", where: { tenantId },required: false,},],
     });
 
     if (!deliveryNote) {
@@ -413,7 +404,7 @@ export const createDeliveryNote = async (req, res) => {
     await transaction.commit();
 
     const created = await DeliveryNote.findByPk(deliveryNote.id, {
-      include: [{ model: DeliveryNoteItem, as: "items" }],
+      include: [{model: DeliveryNoteItem, as: "items", where: { tenantId },required: false,},],
     });
 
     return res.status(201).json({
@@ -440,7 +431,7 @@ export const issueDeliveryNote = async (req, res) => {
 
     const deliveryNote = await DeliveryNote.findOne({
       where: { id, tenantId },
-      include: [{ model: DeliveryNoteItem, as: "items" }],
+      include: [{model: DeliveryNoteItem, as: "items", where: { tenantId }, required: false,},],
       transaction,
       lock: transaction.LOCK.UPDATE,
     });
@@ -592,7 +583,7 @@ export const convertDeliveryNoteToInvoice = async (req, res) => {
 
     const deliveryNote = await DeliveryNote.findOne({
       where: { id, tenantId },
-      include: [{ model: DeliveryNoteItem, as: "items" }],
+      include: [{model: DeliveryNoteItem, as: "items", where: { tenantId },required: false,},],
       transaction,
       lock: transaction.LOCK.UPDATE,
     });
@@ -678,7 +669,7 @@ export const convertDeliveryNoteToInvoice = async (req, res) => {
     await transaction.commit();
 
     const createdInvoice = await Invoice.findByPk(invoice.id, {
-      include: [{ model: InvoiceItem, as: "items" }],
+      include: [{model: InvoiceItem, as: "items", where: { tenantId }, required: false,},],
     });
 
     return res.status(201).json({
@@ -710,6 +701,8 @@ export const deleteDeliveryNote = async (req, res) => {
         message: "Solo puedes eliminar borradores. Para emitidos usa anulación.",
       });
     }
+
+    
 
     await DeliveryNoteItem.destroy({
       where: { deliveryNoteId: deliveryNote.id, tenantId },

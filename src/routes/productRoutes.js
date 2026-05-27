@@ -9,23 +9,24 @@ import {
   reactivateProduct,
   updateProduct,
 } from "../controllers/productController.js";
-import { protect } from "../middlewares/authMiddleware.js";
+import { protect, requireRole } from "../middlewares/authMiddleware.js";
 import { requireActiveSubscription } from "../middlewares/subscriptionMiddleware.js";
 
 const router = express.Router();
 
-router.get("/", protect, requireActiveSubscription, getProducts);
-router.get("/:id/movements", protect, requireActiveSubscription, getProductMovements);
+router.get("/", protect, requireActiveSubscription, requireRole("master", "admin"), getProducts);
+router.get("/:id/movements", protect, requireActiveSubscription, requireRole("master", "admin"), getProductMovements);
 
-router.post("/", protect, requireActiveSubscription, createProduct);
-router.post("/:id/movements", protect, requireActiveSubscription,  createStockMovement);
+router.post("/", protect, requireActiveSubscription, requireRole("master", "admin"), createProduct);
 
-router.post("/import", protect, requireActiveSubscription, importProducts);
+router.post("/:id/movements", protect, requireActiveSubscription, requireRole("master", "admin"), createStockMovement);
 
-router.put("/:id", protect, requireActiveSubscription, updateProduct);
+router.post("/import", protect, requireActiveSubscription, requireRole("master", "admin"), importProducts);
 
-router.patch("/:id/reactivate", protect, requireActiveSubscription, reactivateProduct);
+router.put("/:id", protect, requireActiveSubscription, requireRole("master", "admin"), updateProduct);
 
-router.delete("/:id", protect, requireActiveSubscription, deleteProduct);
+router.patch("/:id/reactivate", protect, requireActiveSubscription, requireRole("master", "admin"), reactivateProduct);
+
+router.delete("/:id", protect, requireActiveSubscription, requireRole("master", "admin"), deleteProduct);
 
 export default router;

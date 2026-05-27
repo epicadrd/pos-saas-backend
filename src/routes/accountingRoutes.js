@@ -1,5 +1,5 @@
 import express from "express";
-import { protect } from "../middlewares/authMiddleware.js";
+import { protect, requireRole } from "../middlewares/authMiddleware.js";
 import { requireActiveSubscription } from "../middlewares/subscriptionMiddleware.js";
 import { getAccountingSummary } from "../controllers/accountingController.js";
 
@@ -9,6 +9,7 @@ router.get(
   "/summary",
   protect,
   requireActiveSubscription,
+  requireRole("master", "admin"),
   getAccountingSummary
 );
 

@@ -148,9 +148,9 @@ export const getQuotes = async (req, res) => {
     const quotes = await Quote.findAll({
       where,
       include: [
-      { model: QuoteItem, as: "items" },
-      { model: User, as: "creator", attributes: ["id", "name", "email", "role"] },
-      { model: User, as: "updater", attributes: ["id", "name", "email", "role"] },
+      {model: QuoteItem, as: "items", where: { tenantId }, required: false,},
+      {model: User, as: "creator", where: { tenantId }, required: false, attributes: ["id", "name", "email", "role"],},
+      {model: User, as: "updater", where: { tenantId }, required: false, attributes: ["id", "name", "email", "role"],},
      ],
       order: [["createdAt", "DESC"]],
     });
@@ -174,7 +174,7 @@ export const getQuoteById = async (req, res) => {
 
     const quote = await Quote.findOne({
       where: { id, tenantId },
-      include: [{ model: QuoteItem, as: "items" }],
+      include: [{model: QuoteItem,as: "items",where: { tenantId },required: false,},],
     });
 
     if (!quote) {
@@ -283,7 +283,14 @@ export const createQuote = async (req, res) => {
     await transaction.commit();
 
     const createdQuote = await Quote.findByPk(quote.id, {
-      include: [{ model: QuoteItem, as: "items" }],
+      include: [
+        {
+          model: QuoteItem,
+          as: "items",
+          where: { tenantId },
+          required: false,
+        },
+      ],
     });
 
     return res.status(201).json({
@@ -346,7 +353,8 @@ export const convertQuoteToInvoice = async (req, res) => {
 
     const quote = await Quote.findOne({
       where: { id, tenantId },
-      include: [{ model: QuoteItem, as: "items" }],
+      include: [
+      {model: QuoteItem,as: "items", where: { tenantId },required: false,},],
       transaction,
       lock: transaction.LOCK.UPDATE,
     });
@@ -432,7 +440,8 @@ export const convertQuoteToInvoice = async (req, res) => {
     await transaction.commit();
 
     const createdInvoice = await Invoice.findByPk(invoice.id, {
-      include: [{ model: InvoiceItem, as: "items" }],
+      include: [
+      {model: InvoiceItem, as: "items", where: { tenantId },required: false,},],
     });
 
     return res.status(201).json({
@@ -542,7 +551,7 @@ export const updateQuote = async (req, res) => {
     await transaction.commit();
 
     const updatedQuote = await Quote.findByPk(quote.id, {
-      include: [{ model: QuoteItem, as: "items" }],
+      include: [{model: QuoteItem, as: "items", where: { tenantId },required: false,},],
     });
 
     return res.json({

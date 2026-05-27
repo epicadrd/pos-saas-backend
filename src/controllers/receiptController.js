@@ -59,15 +59,21 @@ export const getReceipts = async (req, res) => {
       include: [
         {
           model: Invoice,
+          where: { tenantId },
+          required: false,
         },
         {
           model: User,
           as: "creator",
+          where: { tenantId },
+          required: false,
           attributes: ["id", "name", "email", "role"],
         },
         {
           model: User,
           as: "updater",
+          where: { tenantId },
+          required: false,
           attributes: ["id", "name", "email", "role"],
         },
       ],
@@ -203,7 +209,7 @@ export const createReceipt = async (req, res) => {
     await transaction.commit();
 
     const createdReceipt = await Receipt.findByPk(receipt.id, {
-      include: [{ model: Invoice }],
+      include: [{model: Invoice, where: { tenantId },required: false,},],
     });
 
     return res.status(201).json({

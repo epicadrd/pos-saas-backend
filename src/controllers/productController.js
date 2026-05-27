@@ -162,8 +162,10 @@ export const getProductMovements = async (req, res) => {
         {
           model: User,
           as: "user",
+          where: { tenantId },
+          required: false,
           attributes: ["id", "name", "email", "role"],
-        },
+        }
       ],
       order: [["createdAt", "DESC"]],
     });

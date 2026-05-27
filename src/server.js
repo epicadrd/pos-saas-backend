@@ -34,12 +34,57 @@ const app = express();
 
 app.set("trust proxy", 1);
 
+const isProduction = process.env.NODE_ENV === "production";
+
 app.use(
   helmet({
-    crossOriginResourcePolicy: false,
+    contentSecurityPolicy: isProduction
+      ? {
+          directives: {
+            defaultSrc: ["'self'"],
+            baseUri: ["'self'"],
+            frameAncestors: ["'none'"],
+            objectSrc: ["'none'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "https:"],
+            connectSrc: [
+              "'self'",
+              process.env.APP_URL,
+              process.env.FRONTEND_URL,
+              "https://api.corexrd.com",
+              "https://app.corexrd.com",
+              "https://api.brevo.com",
+              "https://api.stripe.com",
+            ].filter(Boolean),
+            upgradeInsecureRequests: [],
+          },
+        }
+      : false,
+
+    crossOriginResourcePolicy: {
+      policy: "cross-origin",
+    },
+
+    crossOriginEmbedderPolicy: false,
+
+    referrerPolicy: {
+      policy: "no-referrer",
+    },
+
+    frameguard: {
+      action: "deny",
+    },
+
+    hsts: isProduction
+      ? {
+          maxAge: 31536000,
+          includeSubDomains: true,
+          preload: true,
+        }
+      : false,
   })
 );
-
 const allowedOrigins = (process.env.APP_URL || "http://localhost:5173")
   .split(",")
   .map((url) => url.trim());
@@ -49,8 +94,6 @@ console.log("✅ CORS permitidos:", allowedOrigins);
 app.use(
   cors({
     origin(origin, callback) {
-      console.log("🌍 Origin recibido:", origin);
-
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }

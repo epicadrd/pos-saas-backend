@@ -187,9 +187,10 @@ export const getReportsOverview = async (req, res) => {
           {
             model: Supplier,
             as: "supplier",
+            where: { tenantId },
             attributes: [],
             required: false,
-          },
+          }
         ],
         attributes: [
           "supplierId",

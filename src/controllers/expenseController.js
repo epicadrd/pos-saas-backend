@@ -10,6 +10,25 @@ const buildExpenseNumber = async (tenantId) => {
   return `GAS-${String(count + 1).padStart(6, "0")}`;
 };
 
+const validateSupplierTenant = async (supplierId, tenantId) => {
+  if (!supplierId) return null;
+
+  const supplier = await Supplier.findOne({
+    where: {
+      id: supplierId,
+      tenantId,
+    },
+  });
+
+  if (!supplier) {
+    const error = new Error("El proveedor seleccionado no existe o no pertenece a esta empresa");
+    error.status = 400;
+    throw error;
+  }
+
+  return supplier;
+};
+
 const normalizeAmounts = ({ subtotal, tax, total }) => {
   const cleanSubtotal = money(subtotal);
   const cleanTax = money(tax);
@@ -97,16 +116,11 @@ export const getExpenses = async (req, res) => {
 
       include: [
         {
-          model: Supplier,
+           model: Supplier,
           as: "supplier",
-          attributes: [
-            "id",
-            "name",
-            "rnc",
-            "phone",
-            "email",
-          ],
+          where: { tenantId },
           required: false,
+          attributes: ["id", "name", "rnc", "phone", "email"],
         },
       ],
 
@@ -168,6 +182,8 @@ export const createExpense = async (req, res) => {
         message: "El total debe ser mayor que cero",
       });
     }
+
+    await validateSupplierTenant(supplierId, tenantId);
 
     const expense = await Expense.create({
       tenantId,
@@ -258,19 +274,18 @@ export const updateExpense = async (req, res) => {
       );
     }
 
+    if (req.body.supplierId !== undefined) {
+      await validateSupplierTenant(req.body.supplierId, tenantId);
+    }
+
     await expense.update(payload);
 
     await logActivity({
       tenantId,
-
       userId: req.user.id,
-
       module: "gastos",
-
       action: "update",
-
       description: `Actualizó el gasto ${expense.expenseNumber}`,
-
       metadata: {
         expenseId: expense.id,
       },

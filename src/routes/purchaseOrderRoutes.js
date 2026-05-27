@@ -5,14 +5,14 @@ import {
   getPurchaseOrders,
   updatePurchaseOrderStatus,
 } from "../controllers/purchaseOrderController.js";
-import { protect } from "../middlewares/authMiddleware.js";
+import { protect, requireRole } from "../middlewares/authMiddleware.js";
 import {requireActiveSubscription} from "../middlewares/subscriptionMiddleware.js";
 
 const router = express.Router();
 
-router.get("/", protect, requireActiveSubscription, getPurchaseOrders);
-router.post("/", protect, requireActiveSubscription, createPurchaseOrder);
-router.patch("/:id/status", protect, requireActiveSubscription, updatePurchaseOrderStatus);
-router.delete("/:id", protect, requireActiveSubscription, deletePurchaseOrder);
+router.get("/", protect, requireActiveSubscription, requireRole("master", "admin"), getPurchaseOrders);
+router.post("/", protect, requireActiveSubscription, requireRole("master", "admin"), createPurchaseOrder);
+router.patch("/:id/status", protect, requireActiveSubscription, requireRole("master", "admin"), updatePurchaseOrderStatus);
+router.delete("/:id", protect, requireActiveSubscription, requireRole("master", "admin"), deletePurchaseOrder);
 
 export default router;

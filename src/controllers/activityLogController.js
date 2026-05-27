@@ -7,11 +7,13 @@ export const getActivityLogs = async (req, res) => {
     const logs = await ActivityLog.findAll({
       where: { tenantId },
       include: [
-        {
+       {
           model: User,
           as: "user",
+          where: { tenantId },
+          required: false,
           attributes: ["id", "name", "email", "role"],
-        },
+        }
       ],
       order: [["createdAt", "DESC"]],
       limit: 100,
