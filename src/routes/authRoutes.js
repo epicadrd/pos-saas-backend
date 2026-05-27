@@ -12,19 +12,27 @@ import {
 import { protect } from "../middlewares/authMiddleware.js";
 import {
   authRateLimit,
+  loginRateLimit,
   loginSecurityGuard,
+  registerRateLimit,
+  refreshRateLimit,
+  resendVerificationRateLimit,
 } from "../middlewares/authSecurityMiddleware.js";
 
 const router = express.Router();
 
-router.post("/register", authRateLimit, register);
-router.post("/login", authRateLimit, loginSecurityGuard, login);
+router.post("/register", registerRateLimit, register);
+router.post("/login", loginRateLimit, loginSecurityGuard, login);
 
 router.get("/me", me);
-router.post("/refresh", authRateLimit, refresh);
+router.post("/refresh", refreshRateLimit, refresh);
 router.post("/logout", logout);
 router.patch("/tenant", protect, updateTenant);
-router.get("/verify-email/:token", verifyEmail);
-router.post("/resend-verification", authRateLimit, resendVerificationEmail);
+router.get("/verify-email/:token", authRateLimit, verifyEmail);
+router.post(
+  "/resend-verification",
+  resendVerificationRateLimit,
+  resendVerificationEmail
+);
 
 export default router;

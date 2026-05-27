@@ -164,7 +164,7 @@ export const login = async (req, res) => {
     });
 
     if (!user) {
-      const remainingAttempts = registerLoginFailure(req);
+      const remainingAttempts = await registerLoginFailure(req);
 
       return res.status(401).json({
         message: "Credenciales incorrectas",
@@ -197,7 +197,7 @@ export const login = async (req, res) => {
       });
     }
 
-    clearLoginFailures(req);
+    await clearLoginFailures(req);
 
     const accessToken = createAccessToken(user);
     const refreshToken = createRefreshToken(user);
