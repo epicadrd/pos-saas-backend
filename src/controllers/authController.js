@@ -175,7 +175,7 @@ export const login = async (req, res) => {
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
-      const remainingAttempts = registerLoginFailure(req);
+      const remainingAttempts = await registerLoginFailure(req);
 
       return res.status(401).json({
         message: "Credenciales incorrectas",
