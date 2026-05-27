@@ -8,6 +8,11 @@ import {
 import crypto from "crypto";
 import { Op } from "sequelize";
 import { sendBrevoEmail } from "../utils/brevoEmail.js";
+import {
+  sanitizeString,
+  sanitizeEmail,
+  sanitizePhone,
+} from "../utils/sanitize.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -88,8 +93,12 @@ const sendVerificationEmail = async (user) => {
 
 export const register = async (req, res) => {
   try {
-    const { businessName, rnc, phone, name, password } = req.body;
-    const email = String(req.body.email || "").trim().toLowerCase();
+    const businessName = sanitizeString(req.body.businessName, 150);
+    const rnc = sanitizeString(req.body.rnc, 30);
+    const phone = sanitizePhone(req.body.phone);
+    const name = sanitizeString(req.body.name, 120);
+    const password = req.body.password;
+    const email = sanitizeEmail(req.body.email);
 
     if (!businessName || !name || !email || !password) {
       return res.status(400).json({
@@ -149,8 +158,8 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const email = String(req.body.email || "").trim().toLowerCase();
-    const { password } = req.body;
+   const email = sanitizeEmail(req.body.email);
+   const password = req.body.password;
 
     if (!email || !password) {
       return res.status(400).json({
@@ -329,21 +338,21 @@ export const updateTenant = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
 
-    const {
-      businessName,
-      email,
-      address,
-      rnc,
-      phone,
-      logoDataUrl,
-      primaryColor,
-      invoiceTaxEnabled,
-      invoiceTaxMode,
-      invoiceTaxRate,
-      invoicePrefix,
-      invoiceNextNumber,
-      invoiceDigits,
-    } = req.body;
+    const businessName = sanitizeString(req.body.businessName, 150);
+    const email = sanitizeEmail(req.body.email);
+    const address = sanitizeString(req.body.address, 255);
+    const rnc = sanitizeString(req.body.rnc, 30);
+    const phone = sanitizePhone(req.body.phone);
+    const primaryColor = sanitizeString(req.body.primaryColor, 20);
+
+    const invoicePrefix = sanitizeString(req.body.invoicePrefix, 20);
+
+    const logoDataUrl = req.body.logoDataUrl;
+    const invoiceTaxEnabled = req.body.invoiceTaxEnabled;
+    const invoiceTaxMode = req.body.invoiceTaxMode;
+    const invoiceTaxRate = req.body.invoiceTaxRate;
+    const invoiceNextNumber = req.body.invoiceNextNumber;
+    const invoiceDigits = req.body.invoiceDigits;
 
     if (!businessName?.trim()) {
       return res.status(400).json({
@@ -389,7 +398,7 @@ export const updateTenant = async (req, res) => {
 
 export const verifyEmail = async (req, res) => {
   try {
-    const { token } = req.params;
+    const token = sanitizeString(req.params.token, 255);
 
     const user = await User.findOne({
       where: {
@@ -425,7 +434,7 @@ export const verifyEmail = async (req, res) => {
 
 export const resendVerificationEmail = async (req, res) => {
   try {
-    const email = String(req.body.email || "").trim().toLowerCase();
+    const email = sanitizeEmail(req.body.email);
 
     if (!email) {
       return res.status(400).json({

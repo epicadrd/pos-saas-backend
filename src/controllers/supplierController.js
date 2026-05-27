@@ -1,4 +1,9 @@
 import { Supplier } from "../models/index.js";
+import {
+  sanitizeString,
+  sanitizeEmail,
+  sanitizePhone,
+} from "../utils/sanitize.js";
 
 export const getSuppliers = async (req, res) => {
   try {
@@ -11,7 +16,7 @@ export const getSuppliers = async (req, res) => {
 
     res.json(suppliers);
   } catch (error) {
-    console.log(error);
+    console.log("GET SUPPLIERS ERROR:", error);
     res.status(500).json({ message: "Error obteniendo proveedores" });
   }
 };
@@ -20,25 +25,30 @@ export const createSupplier = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
 
-    const { name, rnc, phone, email, address, notes } = req.body;
+    const name = sanitizeString(req.body.name, 120);
+    const rnc = sanitizeString(req.body.rnc, 30);
+    const phone = sanitizePhone(req.body.phone);
+    const email = sanitizeEmail(req.body.email);
+    const address = sanitizeString(req.body.address, 255);
+    const notes = sanitizeString(req.body.notes, 1000);
 
-    if (!name?.trim()) {
+    if (!name) {
       return res.status(400).json({ message: "El nombre es obligatorio" });
     }
 
     const supplier = await Supplier.create({
       tenantId,
-      name: name.trim(),
-      rnc,
-      phone,
-      email,
-      address,
-      notes,
+      name,
+      rnc: rnc || null,
+      phone: phone || null,
+      email: email || null,
+      address: address || null,
+      notes: notes || null,
     });
 
     res.status(201).json(supplier);
   } catch (error) {
-    console.log(error);
+    console.log("CREATE SUPPLIER ERROR:", error);
     res.status(500).json({ message: "Error creando proveedor" });
   }
 };
@@ -48,6 +58,13 @@ export const updateSupplier = async (req, res) => {
     const tenantId = req.user.tenantId;
     const { id } = req.params;
 
+    const name = sanitizeString(req.body.name, 120);
+    const rnc = sanitizeString(req.body.rnc, 30);
+    const phone = sanitizePhone(req.body.phone);
+    const email = sanitizeEmail(req.body.email);
+    const address = sanitizeString(req.body.address, 255);
+    const notes = sanitizeString(req.body.notes, 1000);
+
     const supplier = await Supplier.findOne({
       where: { id, tenantId },
     });
@@ -56,11 +73,22 @@ export const updateSupplier = async (req, res) => {
       return res.status(404).json({ message: "Proveedor no encontrado" });
     }
 
-    await supplier.update(req.body);
+    if (!name) {
+      return res.status(400).json({ message: "El nombre es obligatorio" });
+    }
+
+    await supplier.update({
+      name,
+      rnc: rnc || null,
+      phone: phone || null,
+      email: email || null,
+      address: address || null,
+      notes: notes || null,
+    });
 
     res.json(supplier);
   } catch (error) {
-    console.log(error);
+    console.log("UPDATE SUPPLIER ERROR:", error);
     res.status(500).json({ message: "Error actualizando proveedor" });
   }
 };
@@ -78,10 +106,11 @@ export const deleteSupplier = async (req, res) => {
       return res.status(404).json({ message: "Proveedor no encontrado" });
     }
 
-    await supplier.destroy(); // 🔥 eliminación real
+    await supplier.destroy();
 
     res.json({ message: "Proveedor eliminado" });
   } catch (error) {
+    console.log("DELETE SUPPLIER ERROR:", error);
     res.status(500).json({ message: "Error eliminando proveedor" });
   }
 };
@@ -105,7 +134,7 @@ export const toggleSupplierStatus = async (req, res) => {
 
     res.json(supplier);
   } catch (error) {
+    console.log("TOGGLE SUPPLIER STATUS ERROR:", error);
     res.status(500).json({ message: "Error actualizando estado" });
   }
 };
-

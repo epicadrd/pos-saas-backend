@@ -1,5 +1,10 @@
 import { Op, col, fn, literal } from "sequelize";
 import { sequelize, Product, StockMovement, User } from "../models/index.js";
+import {
+  sanitizeString,
+  sanitizeNumber,
+  sanitizeInteger,
+} from "../utils/sanitize.js";
 
 const toNumber = (value, fallback = 0) => {
   const number = Number(value);
@@ -12,23 +17,29 @@ const toInteger = (value, fallback = 0) => {
 };
 
 const normalizeProductPayload = (body) => {
-  const productType = body.productType === "service" ? "service" : "product";
+  const productType =
+    body.productType === "service" ? "service" : "product";
+
   const trackStock =
-    productType === "service" ? false : body.trackStock === false ? false : true;
+    productType === "service"
+      ? false
+      : body.trackStock === false
+      ? false
+      : true;
 
   return {
-    name: body.name?.trim(),
-    sku: body.sku?.trim() || null,
-    barcode: body.barcode?.trim() || null,
-    description: body.description || null,
-    category: body.category || null,
-    unit: body.unit || "unidad",
+    name: sanitizeString(body.name, 120),
+    sku: sanitizeString(body.sku, 50) || null,
+    barcode: sanitizeString(body.barcode, 80) || null,
+    description: sanitizeString(body.description, 1000) || null,
+    category: sanitizeString(body.category, 120) || null,
+    unit: sanitizeString(body.unit, 30) || "unidad",
     productType,
     trackStock,
-    costPrice: toNumber(body.costPrice),
-    salePrice: toNumber(body.salePrice),
-    stock: trackStock ? toInteger(body.stock) : 0,
-    minStock: trackStock ? toInteger(body.minStock) : 0,
+    costPrice: sanitizeNumber(body.costPrice),
+    salePrice: sanitizeNumber(body.salePrice),
+    stock: trackStock ? sanitizeInteger(body.stock) : 0,
+    minStock: trackStock ? sanitizeInteger(body.minStock) : 0,
   };
 };
 
@@ -36,14 +47,13 @@ export const getProducts = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
 
-    const {
-      search = "",
-      status = "active",
-      type = "all",
-      paginated = "false",
-      page = 1,
-      limit = 25,
-    } = req.query;
+    const search = sanitizeString(req.query.search || "", 120);
+    const status = sanitizeString(req.query.status || "active", 20);
+    const type = sanitizeString(req.query.type || "all", 20);
+    const paginated = sanitizeString(req.query.paginated || "false", 10);
+
+    const page = sanitizeInteger(req.query.page, 1);
+    const limit = sanitizeInteger(req.query.limit, 25);
 
     const where = { tenantId };
 
@@ -410,19 +420,12 @@ export const createStockMovement = async (req, res) => {
     const userId = req.user?.id || null;
     const { id } = req.params;
 
-    const {
-      type,
-      quantity,
-      newStock,
-      reason = "Movimiento manual",
-      referenceNumber = null,
-    } = req.body;
-
-    const product = await Product.findOne({
-      where: { id, tenantId, isActive: true },
-      transaction,
-      lock: transaction.LOCK.UPDATE,
-    });
+    const type = sanitizeString(req.body.type, 20);
+    const quantity = sanitizeInteger(req.body.quantity);
+    const newStock = sanitizeInteger(req.body.newStock);
+    const reason = sanitizeString(req.body.reason, 255) || "Movimiento manual";
+    const referenceNumber = sanitizeString(req.body.referenceNumber, 100) || null;
+    const product = await Product.findOne({where: { id, tenantId, isActive: true }, transaction, lock: transaction.LOCK.UPDATE,});
 
 
     if (!product) {
@@ -616,9 +619,8 @@ export const reactivateProduct = async (req, res) => {
   }
 };
 
-const cleanText = (value) => {
-  if (value === undefined || value === null) return "";
-  return String(value).trim();
+const cleanText = (value, max = 255) => {
+  return sanitizeString(value, max);
 };
 
 const normalizeImportedProduct = (row) => {
@@ -635,10 +637,10 @@ const normalizeImportedProduct = (row) => {
     unit: cleanText(row.unit) || (productType === "service" ? "servicio" : "unidad"),
     productType,
     trackStock,
-    costPrice: toNumber(row.costPrice),
-    salePrice: toNumber(row.salePrice),
-    stock: trackStock ? toInteger(row.stock) : 0,
-    minStock: trackStock ? toInteger(row.minStock) : 0,
+    costPrice: sanitizeNumber(row.costPrice),
+    salePrice: sanitizeNumber(row.salePrice),
+    stock: trackStock ? sanitizeInteger(row.stock) : 0,
+    minStock: trackStock ? sanitizeInteger(row.minStock) : 0,
     isActive: true,
   };
 };
