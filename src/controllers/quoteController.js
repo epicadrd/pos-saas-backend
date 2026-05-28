@@ -9,16 +9,13 @@ import {
   sequelize,
   User
 } from "../models/index.js";
-
-const toNumber = (value, fallback = 0) => {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-};
-
-const toInteger = (value, fallback = 0) => {
-  const number = parseInt(value, 10);
-  return Number.isFinite(number) ? number : fallback;
-};
+import {
+  sanitizeString,
+  sanitizeEmail,
+  sanitizePhone,
+  sanitizeNumber,
+  sanitizeInteger,
+} from "../utils/sanitize.js";
 
 const generateQuoteNumber = async (tenantId, transaction) => {
   const count = await Quote.count({
@@ -56,9 +53,9 @@ const normalizeQuoteItems = async ({ items, tenantId, taxConfig = {}, transactio
 
   for (const item of items) {
     const productId = item.productId || item.id || null;
-    const quantity = toInteger(item.quantity, 1);
-    const price = toNumber(item.price ?? item.unitPrice, 0);
-    const discount = toNumber(item.discount, 0);
+    const quantity = sanitizeInteger(item.quantity, 1);
+    const price = sanitizeNumber(item.price ?? item.unitPrice, 0);
+    const discount = sanitizeNumber(item.discount, 0);
 
     if (quantity <= 0) throw new Error("La cantidad debe ser mayor a cero");
     if (price < 0) throw new Error("El precio no puede ser negativo");
@@ -91,7 +88,10 @@ const normalizeQuoteItems = async ({ items, tenantId, taxConfig = {}, transactio
 
     const taxEnabled = taxConfig.invoiceTaxEnabled !== false;
     const taxMode = taxConfig.invoiceTaxMode || "global";
-    const defaultTaxRate = toNumber(taxConfig.invoiceTaxRate, 18);
+    const defaultTaxRate = sanitizeNumber(
+      taxConfig.invoiceTaxRate,
+      18
+    );
 
     const isTaxable =
       taxEnabled && (taxMode === "global" ? true : item.isTaxable !== false);
@@ -104,7 +104,8 @@ const normalizeQuoteItems = async ({ items, tenantId, taxConfig = {}, transactio
       product,
       productId: product?.id || null,
       productName: productName.trim(),
-      description: item.description || product?.description || null,
+      description:
+      sanitizeString(item.description || product?.description || "",1000) || null,
       quantity,
       price,
       discount,
@@ -130,8 +131,8 @@ const sumTotals = (items) => {
 export const getQuotes = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
-    const { search = "", status = "all" } = req.query;
-
+    const search = sanitizeString(req.query.search || "", 120);
+    const status = sanitizeString(req.query.status || "all", 30);
     const where = { tenantId };
 
     if (status !== "all") where.status = status;
@@ -197,17 +198,14 @@ export const createQuote = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
     const userId = req.user?.id || null;
-
-    const {
-      customerName,
-      customerRnc = null,
-      customerPhone = null,
-      customerEmail = null,
-      validUntil = null,
-      notes = null,
-      status = "draft",
-      items = [],
-    } = req.body;
+    const customerName = sanitizeString(req.body.customerName, 120);
+    const customerRnc = sanitizeString(req.body.customerRnc, 30) || null;
+    const customerPhone = sanitizePhone(req.body.customerPhone) || null;
+    const customerEmail = sanitizeEmail(req.body.customerEmail) || null;
+    const validUntil = sanitizeString(req.body.validUntil, 20) || null;
+    const notes = sanitizeString(req.body.notes, 3000) || null;
+    const status = sanitizeString(req.body.status, 30) || "draft";
+    const items = Array.isArray(req.body.items)? req.body.items: [];
 
     if (!customerName?.trim()) {
       throw new Error("El nombre del cliente es obligatorio");
@@ -308,10 +306,9 @@ export const updateQuoteStatus = async (req, res) => {
   try {
   const tenantId = req.user.tenantId;
   const userId = req.user?.id || null;
-    const { id } = req.params;
-    const { status } = req.body;
-
-    const validStatuses = ["draft", "sent", "approved", "rejected"];
+  const { id } = req.params;
+  const status = sanitizeString(req.body.status, 30);
+  const validStatuses = ["draft", "sent", "approved", "rejected"];
 
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: "Estado de cotización inválido" });
@@ -475,16 +472,14 @@ export const updateQuote = async (req, res) => {
       throw new Error("No puedes editar una cotización convertida");
     }
 
-    const {
-      customerName,
-      customerRnc = null,
-      customerPhone = null,
-      customerEmail = null,
-      validUntil = null,
-      notes = null,
-      status = quote.status,
-      items = [],
-    } = req.body;
+    const customerName = sanitizeString(req.body.customerName, 120);
+    const customerRnc = sanitizeString(req.body.customerRnc, 30) || null;
+    const customerPhone = sanitizePhone(req.body.customerPhone) || null;
+    const customerEmail = sanitizeEmail(req.body.customerEmail) || null;
+    const validUntil = sanitizeString(req.body.validUntil, 20) || null;
+    const notes = sanitizeString(req.body.notes, 3000) || null;
+    const status = sanitizeString(req.body.status, 30) || quote.status;
+    const items = Array.isArray(req.body.items)? req.body.items: [];
 
     if (!customerName?.trim()) {
       throw new Error("El nombre del cliente es obligatorio");

@@ -6,6 +6,13 @@ import {
   sequelize,
   User,
 } from "../models/index.js";
+import {
+  sanitizeString,
+  sanitizeEmail,
+  sanitizePhone,
+  sanitizeNumber,
+  sanitizeInteger,
+} from "../utils/sanitize.js";
 
 const generateOrderNumber = async (tenantId) => {
   const count = await PurchaseOrder.count({
@@ -113,16 +120,14 @@ export const createPurchaseOrder = async (req, res) => {
     const tenantId = req.user.tenantId;
     const userId = req.user?.id || null;
 
-    const {
-      supplierName,
-      supplierRnc,
-      supplierPhone,
-      supplierEmail,
-      expectedDate,
-      notes,
-      status = "draft",
-      items = [],
-    } = req.body;
+    const supplierName = sanitizeString(req.body.supplierName, 120);
+    const supplierRnc = sanitizeString(req.body.supplierRnc, 30) || null;
+    const supplierPhone = sanitizePhone(req.body.supplierPhone) || null;
+    const supplierEmail = sanitizeEmail(req.body.supplierEmail) || null;
+    const expectedDate = sanitizeString(req.body.expectedDate, 20) || null;
+    const notes = sanitizeString(req.body.notes, 3000) || null;
+    const status = sanitizeString(req.body.status, 30) || "draft";
+    const items = Array.isArray(req.body.items) ? req.body.items : [];
 
     if (!supplierName) {
       await transaction.rollback();
@@ -139,15 +144,29 @@ export const createPurchaseOrder = async (req, res) => {
     let subtotal = 0;
 
     const formattedItems = items.map((item) => {
-      const quantity = Number(item.quantity || 1);
-      const cost = Number(item.cost || 0);
+      const quantity = sanitizeInteger(item.quantity, 1);
+      const cost = sanitizeNumber(item.cost, 0);
       const total = quantity * cost;
+
+      const productName = sanitizeString(item.productName, 120);
+
+        if (!productName) {
+          throw new Error("El nombre del producto es obligatorio");
+        }
+
+        if (quantity <= 0) {
+          throw new Error("La cantidad debe ser mayor a cero");
+        }
+
+        if (cost < 0) {
+          throw new Error("El costo no puede ser negativo");
+        }
 
       subtotal += total;
 
       return {
         productId: item.productId || null,
-        productName: item.productName,
+        productName,
         quantity,
         cost,
         total,
@@ -242,7 +261,7 @@ export const updatePurchaseOrderStatus = async (req, res) => {
     const tenantId = req.user.tenantId;
     const userId = req.user?.id || null;
     const { id } = req.params;
-    const { status } = req.body;
+    const status = sanitizeString(req.body.status, 30);
 
     if (!["draft", "sent", "received", "cancelled"].includes(status)) {
       await transaction.rollback();

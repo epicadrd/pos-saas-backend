@@ -1,9 +1,9 @@
 import { Invoice, Receipt, sequelize, User } from "../models/index.js";
-
-const toNumber = (value, fallback = 0) => {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-};
+import {
+  sanitizeString,
+  sanitizeNumber,
+  sanitizeInteger,
+} from "../utils/sanitize.js";
 
 const generateReceiptNumber = async (tenantId, transaction) => {
   const count = await Receipt.count({
@@ -24,12 +24,12 @@ const recalculateInvoicePaymentStatus = async ({ invoice, transaction }) => {
     transaction,
   });
 
-  const amountPaid = paidReceipts.reduce(
-    (acc, receipt) => acc + toNumber(receipt.amount),
-    0
-  );
+ const amountPaid = paidReceipts.reduce(
+  (acc, receipt) => acc + sanitizeNumber(receipt.amount),
+  0
+);
 
-  const total = toNumber(invoice.total);
+  const total = sanitizeNumber(invoice.total);
   const balance = Math.max(total - amountPaid, 0);
 
   let status = "issued";
@@ -96,19 +96,15 @@ export const createReceipt = async (req, res) => {
     const tenantId = req.user.tenantId;
     const userId = req.user?.id || null;
 
-    const {
-      invoiceId,
-      customerName,
-      concept,
-      amount,
-      paymentMethod,
-      reference,
-      receiptDate,
-      notes,
-      status = "paid",
-    } = req.body;
-
-    const cleanAmount = toNumber(amount);
+    const invoiceId = sanitizeInteger(req.body.invoiceId, 0) || null;
+    const customerName = sanitizeString(req.body.customerName, 120);
+    const concept = sanitizeString(req.body.concept, 255) || "Pago de factura";
+    const cleanAmount = sanitizeNumber(req.body.amount);
+    const paymentMethod = sanitizeString(req.body.paymentMethod, 30) || "cash";
+    const reference = sanitizeString(req.body.reference, 120) || null;
+    const receiptDate = sanitizeString(req.body.receiptDate, 20) || new Date();
+    const notes = sanitizeString(req.body.notes, 2000) || null;
+    const status = sanitizeString(req.body.status, 30) || "paid";
 
     if (!customerName?.trim()) {
       await transaction.rollback();
@@ -157,7 +153,7 @@ export const createReceipt = async (req, res) => {
         });
       }
 
-        const currentBalance = toNumber(
+        const currentBalance = sanitizeNumber(
           invoice.balance !== null && invoice.balance !== undefined
             ? invoice.balance
             : invoice.total
@@ -185,7 +181,7 @@ export const createReceipt = async (req, res) => {
         tenantId,
         invoiceId: invoiceId || null,
         receiptNumber,
-        customerName: customerName.trim(),
+        customerName,
         concept: concept || "Pago de factura",
         amount: cleanAmount,
         paymentMethod: paymentMethod || "cash",

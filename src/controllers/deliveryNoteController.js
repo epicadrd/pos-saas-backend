@@ -9,17 +9,14 @@ import {
   InvoiceItem,
   User
 } from "../models/index.js";
+import {
+  sanitizeString,
+  sanitizeEmail,
+  sanitizePhone,
+  sanitizeNumber,
+  sanitizeInteger,
+} from "../utils/sanitize.js";
 
-
-const toNumber = (value, fallback = 0) => {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-};
-
-const toInteger = (value, fallback = 0) => {
-  const number = parseInt(value, 10);
-  return Number.isFinite(number) ? number : fallback;
-};
 
 const generateDeliveryNoteNumber = async (tenantId, transaction) => {
   const count = await DeliveryNote.count({
@@ -58,17 +55,10 @@ const normalizeItems = async ({
 
   for (const item of items) {
     const productId = item.productId || item.id;
-    const requestedQuantity = toInteger(
-      item.requestedQuantity || item.quantity,
-      1
-    );
-    const dispatchedQuantity = toInteger(
-      item.dispatchedQuantity || item.quantity,
-      requestedQuantity
-    );
-
-    const unitPrice = toNumber(item.unitPrice ?? item.price, 0);
-    const discount = toNumber(item.discount, 0);
+    const requestedQuantity = sanitizeInteger(item.requestedQuantity || item.quantity,1);
+    const dispatchedQuantity = sanitizeInteger(item.dispatchedQuantity || item.quantity,requestedQuantity);
+    const unitPrice = sanitizeNumber(item.unitPrice ?? item.price, 0);
+    const discount = sanitizeNumber(item.discount, 0);
 
     if (!productId) throw new Error("Producto inválido en conduce");
     if (requestedQuantity <= 0) {
@@ -117,8 +107,8 @@ const normalizeItems = async ({
       product,
       productId: product.id,
       productName: product.name,
-      description: item.description || product.description || product.name,
-      unit: item.unit || product.unit || "UND",
+      description:sanitizeString(item.description || product.description || product.name, 1000),
+      unit:sanitizeString(item.unit || product.unit || "UND", 30),
       requestedQuantity,
       dispatchedQuantity,
       unitPrice,
@@ -307,27 +297,26 @@ export const createDeliveryNote = async (req, res) => {
     const tenantId = req.user.tenantId;
     const userId = req.user?.id || null;
 
-    const {
-      customerName,
-      customerRnc = null,
-      customerPhone = null,
-      customerEmail = null,
-      customerAddress = null,
-      customerPurchaseOrder = "N/A",
-      warehouseName = "Principal",
-      issueDate = new Date().toISOString().slice(0, 10),
-      deliveryDate = null,
-      driverName = null,
-      driverId = null,
-      vehiclePlate = null,
-      deliveryAddress = null,
-      deliveryInstructions = null,
-      sourceType = null,
-      sourceId = null,
-      status = "draft",
-      items = [],
-    } = req.body;
+const customerName = sanitizeString(req.body.customerName, 120);
+const customerRnc = sanitizeString(req.body.customerRnc, 30) || null;
+const customerPhone = sanitizePhone(req.body.customerPhone) || null;
+const customerEmail = sanitizeEmail(req.body.customerEmail) || null;
+const customerAddress = sanitizeString(req.body.customerAddress, 255) || null;
 
+  const customerPurchaseOrder = sanitizeString(req.body.customerPurchaseOrder, 80) || "N/A";
+  const warehouseName = sanitizeString(req.body.warehouseName, 120) || "Principal";
+  const issueDate = sanitizeString(req.body.issueDate, 20) || new Date().toISOString().slice(0, 10);
+  const deliveryDate =sanitizeString(req.body.deliveryDate, 20) || null;
+  const driverName =sanitizeString(req.body.driverName, 120) || null;
+  const driverId =sanitizeString(req.body.driverId, 50) || null;
+  const vehiclePlate =sanitizeString(req.body.vehiclePlate, 30) || null;
+  const deliveryAddress =sanitizeString(req.body.deliveryAddress, 255) || null;
+  const deliveryInstructions =sanitizeString(req.body.deliveryInstructions, 1000) || null;
+  const sourceType =sanitizeString(req.body.sourceType, 50) || null;
+  const sourceId = sanitizeInteger(req.body.sourceId, 0) || null;
+  const status =sanitizeString(req.body.status, 30) || "draft";
+
+const items = Array.isArray(req.body.items) ? req.body.items : [];
     if (!customerName?.trim()) {
       throw new Error("El cliente es obligatorio");
     }
@@ -489,11 +478,9 @@ export const markDeliveryNoteDelivered = async (req, res) => {
     const tenantId = req.user.tenantId;
     const userId = req.user?.id || null;
     const { id } = req.params;
-    const { receivedByName = null, receivedById = null } = req.body;
-
-    const deliveryNote = await DeliveryNote.findOne({
-      where: { id, tenantId },
-    });
+    const receivedByName = sanitizeString(req.body.receivedByName, 120) || null;
+    const receivedById =sanitizeString(req.body.receivedById, 50) || null;
+    const deliveryNote = await DeliveryNote.findOne({ where: { id, tenantId },});
 
     if (!deliveryNote) {
       return res.status(404).json({ message: "Conduce no encontrado" });

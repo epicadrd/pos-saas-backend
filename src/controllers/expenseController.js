@@ -1,6 +1,11 @@
 import { Op, fn, col } from "sequelize";
 import { Expense, Supplier } from "../models/index.js";
 import { logActivity } from "../utils/activityLogger.js";
+import {
+  sanitizeString,
+  sanitizeNumber,
+  sanitizeInteger,
+} from "../utils/sanitize.js";
 
 const money = (value) => Number(value || 0);
 
@@ -51,15 +56,12 @@ export const getExpenses = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
 
-    const {
-      search = "",
-      category = "",
-      status = "",
-      supplierId = "",
-      from = "",
-      to = "",
-    } = req.query;
-
+    const search = sanitizeString(req.query.search || "", 120);
+    const category = sanitizeString(req.query.category || "", 80);
+    const status = sanitizeString(req.query.status || "", 30);
+    const supplierId = sanitizeInteger(req.query.supplierId, 0);
+    const from = sanitizeString(req.query.from || "", 20);
+    const to = sanitizeString(req.query.to || "", 20);
     const where = { tenantId };
 
     if (category) where.category = category;
@@ -144,26 +146,24 @@ export const createExpense = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
 
-    const {
-      category,
-      description,
-      supplierId,
-      supplierName,
-      supplierRnc,
-      ncf,
-      expenseDate,
-      paymentMethod,
-      status,
-      notes,
-    } = req.body;
+    const category = sanitizeString(req.body.category, 80);
+    const description = sanitizeString(req.body.description, 1000);
+    const supplierId = sanitizeInteger(req.body.supplierId, 0);
+    const supplierName = sanitizeString(req.body.supplierName, 120);
+    const supplierRnc = sanitizeString(req.body.supplierRnc, 30);
+    const ncf = sanitizeString(req.body.ncf, 30)?.toUpperCase() || null;
+    const expenseDate = sanitizeString(req.body.expenseDate, 20);
+    const paymentMethod = sanitizeString(req.body.paymentMethod, 30) || "cash";
+    const status = sanitizeString(req.body.status, 30) || "paid";
+    const notes = sanitizeString(req.body.notes, 2000);
 
-    if (!category?.trim()) {
+    if (!category) {
       return res.status(400).json({
         message: "La categoría es obligatoria",
       });
     }
 
-    if (!description?.trim()) {
+    if (!description) {
       return res.status(400).json({
         message: "La descripción es obligatoria",
       });
@@ -234,6 +234,23 @@ export const updateExpense = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
 
+    const payload = {
+    category: sanitizeString(req.body.category, 80),
+    description: sanitizeString(req.body.description, 1000),
+    supplierId: req.body.supplierId !== undefined && req.body.supplierId !== null && req.body.supplierId !== "" ? sanitizeInteger(req.body.supplierId, 0): null,
+    supplierName: sanitizeString(req.body.supplierName, 120),
+    supplierRnc: sanitizeString(req.body.supplierRnc, 30),
+    ncf: sanitizeString(req.body.ncf, 30)?.toUpperCase() || null,
+    expenseDate: sanitizeString(req.body.expenseDate, 20),
+    paymentMethod: sanitizeString(req.body.paymentMethod, 30) || "cash",
+    status: sanitizeString(req.body.status, 30) || "paid",
+    notes: sanitizeString(req.body.notes, 2000),
+    subtotal: sanitizeNumber(req.body.subtotal),
+    tax: sanitizeNumber(req.body.tax),
+    total: sanitizeNumber(req.body.total),
+    updatedBy: req.user.id,
+  };
+
     const expense = await Expense.findOne({
       where: {
         id: req.params.id,
@@ -246,12 +263,6 @@ export const updateExpense = async (req, res) => {
         message: "Gasto no encontrado",
       });
     }
-
-    const payload = {
-      ...req.body,
-
-      updatedBy: req.user.id,
-    };
 
     if (
       req.body.subtotal !== undefined ||
@@ -275,7 +286,7 @@ export const updateExpense = async (req, res) => {
     }
 
     if (req.body.supplierId !== undefined) {
-      await validateSupplierTenant(req.body.supplierId, tenantId);
+      await validateSupplierTenant(payload.supplierId, tenantId);
     }
 
     await expense.update(payload);

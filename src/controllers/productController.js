@@ -653,6 +653,12 @@ export const importProducts = async (req, res) => {
     const userId = req.user?.id || null;
 
     const rows = Array.isArray(req.body.products) ? req.body.products : [];
+    if (rows.length > 1000) {
+      await transaction.rollback();
+      return res.status(400).json({
+        message: "No puedes importar más de 1000 productos a la vez",
+      });
+    }
     const updateExisting = req.body.updateExisting === true;
 
     if (!rows.length) {

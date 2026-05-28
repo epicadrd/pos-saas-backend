@@ -13,6 +13,7 @@ import {
   sanitizeEmail,
   sanitizePhone,
 } from "../utils/sanitize.js";
+import { validateLogoDataUrl } from "../utils/fileValidators.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -38,17 +39,26 @@ const createRefreshToken = (user) => {
       email: user.email,
     },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn: "8h" }
   );
+};
+
+const refreshCookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "none" : "lax",
+  path: "/",
 };
 
 const setRefreshCookie = (res, token) => {
   res.cookie("pos_refresh_token", token, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    ...refreshCookieOptions,
+    maxAge: 8 * 60 * 60 * 1000
   });
+};
+
+const clearRefreshCookie = (res) => {
+  res.clearCookie("pos_refresh_token", refreshCookieOptions);
 };
 
 const cleanUser = (user) => {
@@ -254,7 +264,7 @@ export const me = async (req, res) => {
     }
 
     if (!user.isActive) {
-      res.clearCookie("pos_refresh_token");
+      clearRefreshCookie(res);
 
       return res.status(403).json({
         message: "Este usuario está desactivado",
@@ -268,12 +278,15 @@ export const me = async (req, res) => {
       user: cleanUser(user),
       tenant: user.Tenant,
     });
-  } catch (error) {
+    } catch (error) {
+    clearRefreshCookie(res);
+
     return res.status(401).json({
       message: "Sesión inválida",
     });
   }
 };
+  
 
 export const refresh = async (req, res) => {
   try {
@@ -302,7 +315,7 @@ export const refresh = async (req, res) => {
     }
 
     if (!user.isActive) {
-      res.clearCookie("pos_refresh_token");
+      clearRefreshCookie(res);
 
       return res.status(403).json({
         message: "Este usuario está desactivado",
@@ -316,18 +329,16 @@ export const refresh = async (req, res) => {
       user: cleanUser(user),
     });
   } catch (error) {
-    return res.status(401).json({
-      message: "Token inválido",
-    });
-  }
+  clearRefreshCookie(res);
+
+  return res.status(401).json({
+    message: "Token inválido",
+  });
+}
 };
 
 export const logout = async (req, res) => {
-  res.clearCookie("pos_refresh_token", {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
-  });
+  clearRefreshCookie(res);
 
   return res.json({
     message: "Sesión cerrada correctamente",
@@ -347,7 +358,7 @@ export const updateTenant = async (req, res) => {
 
     const invoicePrefix = sanitizeString(req.body.invoicePrefix, 20);
 
-    const logoDataUrl = req.body.logoDataUrl;
+    const logoDataUrl = validateLogoDataUrl(req.body.logoDataUrl);
     const invoiceTaxEnabled = req.body.invoiceTaxEnabled;
     const invoiceTaxMode = req.body.invoiceTaxMode;
     const invoiceTaxRate = req.body.invoiceTaxRate;
@@ -374,7 +385,7 @@ export const updateTenant = async (req, res) => {
       address: address?.trim() || null,
       rnc: rnc?.trim() || null,
       phone: phone?.trim() || null,
-      logoDataUrl: logoDataUrl || tenant.logoDataUrl,
+      logoDataUrl: logoDataUrl !== undefined ? logoDataUrl : tenant.logoDataUrl,
       primaryColor: primaryColor || tenant.primaryColor || "#6d4aff",
       invoiceTaxEnabled: typeof invoiceTaxEnabled === "boolean" ? invoiceTaxEnabled: tenant.invoiceTaxEnabled,
       invoiceTaxMode:  invoiceTaxMode === "line" || invoiceTaxMode === "global" ? invoiceTaxMode : tenant.invoiceTaxMode,
@@ -476,4 +487,4 @@ export const resendVerificationEmail = async (req, res) => {
       message: "Error reenviando confirmación",
     });
   }
-};
+ }

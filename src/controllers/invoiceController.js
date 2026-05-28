@@ -9,17 +9,13 @@ import {
   User,
 } from "../models/index.js";
 import { logActivity } from "../utils/activityLogger.js";
-
-
-const toNumber = (value, fallback = 0) => {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-};
-
-const toInteger = (value, fallback = 0) => {
-  const number = parseInt(value, 10);
-  return Number.isFinite(number) ? number : fallback;
-};
+import {
+  sanitizeString,
+  sanitizeEmail,
+  sanitizePhone,
+  sanitizeNumber,
+  sanitizeInteger,
+} from "../utils/sanitize.js";
 
 const calculateTotals = (items = [], taxConfig = {}) => {
   let subtotal = 0;
@@ -85,9 +81,9 @@ const validateAndNormalizeItems = async ({
 
   for (const item of items) {
     const productId = item.productId || item.id;
-    const quantity = toInteger(item.quantity);
-    const price = toNumber(item.price ?? item.unitPrice);
-    const discount = toNumber(item.discount);
+    const quantity = sanitizeInteger(item.quantity);
+    const price = sanitizeNumber(item.price ?? item.unitPrice);
+    const discount = sanitizeNumber(item.discount);
 
     if (!productId) throw new Error("Producto inválido en factura");
     if (quantity <= 0) throw new Error("La cantidad debe ser mayor a cero");
@@ -121,7 +117,7 @@ const validateAndNormalizeItems = async ({
 
       const taxEnabled = taxConfig.invoiceTaxEnabled !== false;
       const taxMode = taxConfig.invoiceTaxMode || "global";
-      const defaultTaxRate = toNumber(taxConfig.invoiceTaxRate, 18);
+      const defaultTaxRate = sanitizeNumber(taxConfig.invoiceTaxRate, 18);
 
       const isTaxable =
         taxEnabled &&
@@ -135,7 +131,7 @@ const validateAndNormalizeItems = async ({
       product,
       productId: product.id,
       productName: product.name,
-      description: item.description || product.description || null,
+      description:sanitizeString(item.description || product.description || "",1000) || null,
       quantity,
       unitPrice: price,
       discount: discountPercent,
@@ -217,7 +213,8 @@ const applyInvoiceStockExit = async ({
 export const getInvoices = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
-    const { search = "", status = "all" } = req.query;
+    const search = sanitizeString(req.query.search || "", 120);
+    const status = sanitizeString(req.query.status || "all", 30);
 
     const where = { tenantId };
 
@@ -279,19 +276,17 @@ export const createInvoice = async (req, res) => {
     const tenantId = req.user.tenantId;
     const userId = req.user?.id || null;
 
-    const {
-      customerName,
-      customerRnc = null,
-      customerPhone = null,
-      customerEmail = null,
-      items = [],
-      status = "issued",
-      amountPaid = 0,
-      invoiceDate = null,
-      dueDate = null,
-      terms = null,
-      notes = null,
-    } = req.body;
+    const customerName = sanitizeString(req.body.customerName, 120);
+    const customerRnc = sanitizeString(req.body.customerRnc, 30) || null;
+    const customerPhone = sanitizePhone(req.body.customerPhone) || null;
+    const customerEmail = sanitizeEmail(req.body.customerEmail) || null;
+    const items = Array.isArray(req.body.items) ? req.body.items: [];
+    const status = sanitizeString(req.body.status, 30) || "issued";
+    const amountPaid = sanitizeNumber(req.body.amountPaid);
+    const invoiceDate = sanitizeString(req.body.invoiceDate, 20) || null;
+    const dueDate = sanitizeString(req.body.dueDate, 20) || null;
+    const terms = sanitizeString(req.body.terms, 2000) || null;
+    const notes = sanitizeString(req.body.notes, 3000) || null;
 
     if (!customerName?.trim()) {
       throw new Error("El cliente es obligatorio");
@@ -326,7 +321,7 @@ export const createInvoice = async (req, res) => {
     const subtotal = normalizedItems.reduce((acc, i) => acc + i.subtotal, 0);
 const tax = normalizedItems.reduce((acc, i) => acc + i.tax, 0);
 const total = normalizedItems.reduce((acc, i) => acc + i.total, 0);
-    const paid = isDraft ? 0 : toNumber(amountPaid);
+    const paid = isDraft ? 0 : sanitizeNumber(amountPaid);
 
     if (paid < 0) throw new Error("El monto pagado no puede ser negativo");
     if (paid > total) throw new Error("El monto pagado no puede ser mayor al total");
@@ -437,18 +432,15 @@ export const updateDraftInvoice = async (req, res) => {
       throw new Error("Solo puedes editar facturas en borrador");
     }
 
-    const {
-      customerName,
-      customerRnc = null,
-      customerPhone = null,
-      customerEmail = null,
-      invoiceDate = null,
-      dueDate = null,
-      terms = null,
-      notes = null,
-      items = [],
-      
-    } = req.body;
+    const customerName = sanitizeString(req.body.customerName, 120);
+    const customerRnc = sanitizeString(req.body.customerRnc, 30) || null;
+    const customerPhone = sanitizePhone(req.body.customerPhone) || null;
+    const customerEmail = sanitizeEmail(req.body.customerEmail) || null;
+    const invoiceDate = sanitizeString(req.body.invoiceDate, 20) || null;
+    const dueDate = sanitizeString(req.body.dueDate, 20) || null;
+    const terms = sanitizeString(req.body.terms, 2000) || null;
+    const notes = sanitizeString(req.body.notes, 3000) || null;
+    const items = Array.isArray(req.body.items) ? req.body.items: [];
 
     if (!customerName?.trim()) {
       throw new Error("El cliente es obligatorio");
@@ -535,7 +527,7 @@ export const issueDraftInvoice = async (req, res) => {
     const tenantId = req.user.tenantId;
     const userId = req.user?.id || null;
     const { id } = req.params;
-    const { amountPaid = 0 } = req.body;
+    const amountPaid = sanitizeNumber(req.body.amountPaid);
 
     const invoice = await Invoice.findOne({
       where: { id, tenantId },
@@ -578,7 +570,7 @@ export const issueDraftInvoice = async (req, res) => {
       taxConfig: tenant
     });
 
-    const paid = toNumber(amountPaid);
+    const paid = sanitizeNumber(amountPaid);
 
     if (paid < 0) throw new Error("El monto pagado no puede ser negativo");
     if (paid > Number(invoice.total)) {
