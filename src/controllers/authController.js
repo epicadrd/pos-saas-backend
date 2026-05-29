@@ -14,6 +14,8 @@ import {
   sanitizePhone,
 } from "../utils/sanitize.js";
 import { validateLogoDataUrl } from "../utils/fileValidators.js";
+import { logSecurityEvent } from "../utils/securityLogger.js";
+import { logger } from "../utils/secureLogger.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -48,13 +50,11 @@ const refreshCookieOptions = {
   secure: isProduction,
   sameSite: isProduction ? "none" : "lax",
   path: "/",
+  maxAge: 8 * 60 * 60 * 1000,
 };
 
 const setRefreshCookie = (res, token) => {
-  res.cookie("pos_refresh_token", token, {
-    ...refreshCookieOptions,
-    maxAge: 8 * 60 * 60 * 1000
-  });
+  res.cookie("pos_refresh_token", token, refreshCookieOptions);
 };
 
 const clearRefreshCookie = (res) => {
@@ -154,12 +154,19 @@ export const register = async (req, res) => {
 
     await sendVerificationEmail(user);
 
+    await logSecurityEvent({
+      req,
+      user,
+      event: "user_registered",
+      level: "info",
+    });
+
     return res.status(201).json({
       message:
         "Cuenta creada correctamente. Revisa tu correo para confirmar tu cuenta antes de iniciar sesión.",
     });
   } catch (error) {
-    console.log("REGISTER ERROR:", error);
+    logger.error("REGISTER_ERROR", error);
     return res.status(500).json({
       message: "Error creando cuenta",
     });
@@ -182,27 +189,50 @@ export const login = async (req, res) => {
       include: [{ model: Tenant }],
     });
 
-    if (!user) {
-      const remainingAttempts = await registerLoginFailure(req);
+   if (!user) {
+    const remainingAttempts = await registerLoginFailure(req);
 
-      return res.status(401).json({
-        message: "Credenciales incorrectas",
-        remainingAttempts,
-      });
-    }
+    await logSecurityEvent({
+      req,
+      event: "login_failed_user_not_found",
+      level: "warning",
+      email,
+    });
+
+    return res.status(401).json({
+      message: "Credenciales incorrectas",
+      remainingAttempts,
+    });
+  }
 
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
-      const remainingAttempts = await registerLoginFailure(req);
+    const remainingAttempts = await registerLoginFailure(req);
 
-      return res.status(401).json({
-        message: "Credenciales incorrectas",
-        remainingAttempts,
-      });
-    }
+    await logSecurityEvent({
+      req,
+      user,
+      event: "login_failed_invalid_password",
+      level: "warning",
+      email,
+    });
+
+    return res.status(401).json({
+      message: "Credenciales incorrectas",
+      remainingAttempts,
+    });
+  }
 
     if (!user.emailVerified) {
+      await logSecurityEvent({
+        req,
+        user,
+        event: "login_blocked_email_not_verified",
+        level: "warning",
+        email,
+      });
+
       return res.status(403).json({
         code: "EMAIL_NOT_VERIFIED",
         message:
@@ -211,6 +241,14 @@ export const login = async (req, res) => {
     }
 
     if (!user.isActive) {
+      await logSecurityEvent({
+        req,
+        user,
+        event: "login_blocked_user_inactive",
+        level: "warning",
+        email,
+      });
+
       return res.status(403).json({
         message: "Este usuario está desactivado",
       });
@@ -223,6 +261,13 @@ export const login = async (req, res) => {
 
     setRefreshCookie(res, refreshToken);
 
+    await logSecurityEvent({
+      req,
+      user,
+      event: "login_success",
+      level: "info",
+    });
+
     return res.json({
       message: "Login correcto",
       accessToken,
@@ -230,7 +275,7 @@ export const login = async (req, res) => {
       tenant: user.Tenant,
     });
   } catch (error) {
-    console.log("LOGIN ERROR:", error);
+    logger.error("LOGIN_ERROR", error);
     return res.status(500).json({
       message: "Error iniciando sesión",
     });
@@ -338,6 +383,13 @@ export const refresh = async (req, res) => {
 };
 
 export const logout = async (req, res) => {
+  await logSecurityEvent({
+    req,
+    user: req.user || null,
+    event: "logout",
+    level: "info",
+  });
+
   clearRefreshCookie(res);
 
   return res.json({
@@ -378,8 +430,23 @@ export const updateTenant = async (req, res) => {
         message: "Empresa no encontrada",
       });
     }
+    const previousTenantData = {
+    businessName: tenant.businessName,
+    email: tenant.email,
+    address: tenant.address,
+    rnc: tenant.rnc,
+    phone: tenant.phone,
+    primaryColor: tenant.primaryColor,
+    invoicePrefix: tenant.invoicePrefix,
+    invoiceTaxEnabled: tenant.invoiceTaxEnabled,
+    invoiceTaxMode: tenant.invoiceTaxMode,
+    invoiceTaxRate: tenant.invoiceTaxRate,
+    invoiceNextNumber: tenant.invoiceNextNumber,
+    invoiceDigits: tenant.invoiceDigits,
+  };
 
     await tenant.update({
+
       businessName: businessName.trim(),
       email: email?.trim() || null,
       address: address?.trim() || null,
@@ -395,12 +462,37 @@ export const updateTenant = async (req, res) => {
       invoiceDigits:invoiceDigits !== undefined && Number(invoiceDigits) >= 3 ? Number(invoiceDigits) : tenant.invoiceDigits,
     });
 
+    await logSecurityEvent({
+      req,
+      user: req.user,
+      event: "tenant_updated",
+      level: "info",
+      metadata: {
+        tenantId,
+        previous: previousTenantData,
+        current: {
+          businessName: tenant.businessName,
+          email: tenant.email,
+          address: tenant.address,
+          rnc: tenant.rnc,
+          phone: tenant.phone,
+          primaryColor: tenant.primaryColor,
+          invoicePrefix: tenant.invoicePrefix,
+          invoiceTaxEnabled: tenant.invoiceTaxEnabled,
+          invoiceTaxMode: tenant.invoiceTaxMode,
+          invoiceTaxRate: tenant.invoiceTaxRate,
+          invoiceNextNumber: tenant.invoiceNextNumber,
+          invoiceDigits: tenant.invoiceDigits,
+        },
+      },
+    });
+
     return res.json({
       message: "Empresa actualizada correctamente",
       tenant,
     });
   } catch (error) {
-    console.log("UPDATE TENANT ERROR:", error);
+    logger.error("UPDATE_TENANT_ERROR", error);
     return res.status(500).json({
       message: "Error actualizando empresa",
     });
@@ -432,11 +524,18 @@ export const verifyEmail = async (req, res) => {
       emailVerificationExpires: null,
     });
 
+    await logSecurityEvent({
+      req,
+      user,
+      event: "email_verified",
+      level: "info",
+    });
+
     return res.json({
       message: "Correo confirmado correctamente. Ya puedes iniciar sesión.",
     });
   } catch (error) {
-    console.log("VERIFY EMAIL ERROR:", error);
+    logger.error("VERIFY_EMAIL_ERROR", error);
     return res.status(500).json({
       message: "Error confirmando correo",
     });
@@ -482,7 +581,7 @@ export const resendVerificationEmail = async (req, res) => {
       message: "Te enviamos un nuevo enlace de confirmación.",
     });
   } catch (error) {
-    console.log("RESEND VERIFICATION ERROR:", error);
+    logger.error("RESEND_VERIFICATION_ERROR", error);
     return res.status(500).json({
       message: "Error reenviando confirmación",
     });

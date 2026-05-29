@@ -20,13 +20,18 @@ import supplierRoutes from "./routes/supplierRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import activityLogRoutes from "./routes/activityLogRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
-import { sequelize } from "./models/index.js";
 import accountingRoutes from "./routes/accountingRoutes.js";
 import expenseRoutes from "./routes/expenseRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import accountsReceivableRoutes from "./routes/accountsReceivableRoutes.js";
 import accountsPayableRoutes from "./routes/accountsPayableRoutes.js";
 import accountSettingsRoutes from "./routes/accountSettingsRoutes.js";
+
+import { sequelize } from "./models/index.js";
+import { logger } from "./utils/secureLogger.js";
+import { requestIdMiddleware } from "./middlewares/requestIdMiddleware.js";
+import { accessLogMiddleware } from "./middlewares/accessLogMiddleware.js";
+import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 
 dotenv.config();
 
@@ -61,21 +66,16 @@ app.use(
           },
         }
       : false,
-
     crossOriginResourcePolicy: {
       policy: "cross-origin",
     },
-
     crossOriginEmbedderPolicy: false,
-
     referrerPolicy: {
       policy: "no-referrer",
     },
-
     frameguard: {
       action: "deny",
     },
-
     hsts: isProduction
       ? {
           maxAge: 31536000,
@@ -85,11 +85,12 @@ app.use(
       : false,
   })
 );
+
 const allowedOrigins = (process.env.APP_URL || "http://localhost:5173")
   .split(",")
   .map((url) => url.trim());
 
-console.log("✅ CORS permitidos:", allowedOrigins);
+logger.info("CORS_ALLOWED_ORIGINS", { allowedOrigins });
 
 app.use(
   cors({
@@ -104,6 +105,7 @@ app.use(
   })
 );
 
+app.use(requestIdMiddleware);
 app.use(cookieParser());
 
 /*
@@ -116,8 +118,10 @@ app.use("/api/webhooks", webhookRoutes);
 app.use(express.json({ limit: "8mb" }));
 app.use(express.urlencoded({ extended: true, limit: "8mb" }));
 
-if (process.env.NODE_ENV !== "test") {
-  app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+app.use(accessLogMiddleware);
+
+if (process.env.NODE_ENV !== "test" && !isProduction) {
+  app.use(morgan("dev"));
 }
 
 app.get("/", (req, res) => {
@@ -148,38 +152,24 @@ app.use("/api/accounts-receivable", accountsReceivableRoutes);
 app.use("/api/accounts-payable", accountsPayableRoutes);
 app.use("/api/account-settings", accountSettingsRoutes);
 
-app.use((req, res) => {
-  res.status(404).json({
-    message: "Ruta no encontrada",
-  });
-});
-
-app.use((error, req, res, next) => {
-  console.error("GLOBAL ERROR:", error);
-
-  res.status(error.status || 500).json({
-    message:
-      process.env.NODE_ENV === "production"
-        ? "Error interno del servidor"
-        : error.message || "Error interno del servidor",
-  });
-});
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 8080;
 
 const startServer = async () => {
   try {
     await sequelize.authenticate();
-    console.log("✅ Base de datos conectada");
+    logger.info("DATABASE_CONNECTED");
 
     await sequelize.sync();
-    console.log("✅ Modelos sincronizados");
+    logger.info("MODELS_SYNCED");
 
     app.listen(PORT, () => {
-      console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+      logger.info("SERVER_RUNNING", { port: PORT });
     });
   } catch (error) {
-    console.error("❌ Error iniciando servidor:", error);
+    logger.error("SERVER_START_ERROR", error);
     process.exit(1);
   }
 };

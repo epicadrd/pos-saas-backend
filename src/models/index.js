@@ -16,6 +16,8 @@ import { Customer } from "./Customer.js";
 import { Supplier } from "./Supplier.js";
 import { ActivityLog } from "./ActivityLog.js";
 import { Expense } from "./Expense.js";
+import { SecurityLog } from "./SecurityLog.js";
+import { AccessLog } from "./AccessLog.js";
 
 Invoice.belongsTo(User, {
   foreignKey: "createdBy",
@@ -114,4 +116,6 @@ export {
   DeliveryNoteItem,
   ActivityLog,
   Expense,
+  SecurityLog,
+  AccessLog,
 };
