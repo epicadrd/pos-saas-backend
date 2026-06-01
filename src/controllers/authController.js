@@ -586,4 +586,167 @@ export const resendVerificationEmail = async (req, res) => {
       message: "Error reenviando confirmación",
     });
   }
- }
+}
+
+const generatePasswordReset = () => {
+  const token = crypto.randomBytes(32).toString("hex");
+
+  return {
+    token,
+    expires: new Date(Date.now() + 1000 * 60 * 30), // 30 minutos
+  };
+};
+
+const sendPasswordResetEmail = async (user) => {
+  const resetUrl = `${process.env.APP_URL}/reset-password/${user.rawPasswordResetToken}`;
+
+  await sendBrevoEmail({
+    to: user.email,
+    subject: "Restablece tu contraseña en Corex",
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;">
+        <h2>Restablecer contraseña</h2>
+        <p>Hola ${user.name}, recibimos una solicitud para restablecer tu contraseña.</p>
+        <p>Haz clic en el siguiente botón para crear una nueva contraseña.</p>
+        <a href="${resetUrl}" style="display:inline-block;background:#00b8a9;color:white;padding:14px 22px;border-radius:10px;text-decoration:none;font-weight:bold;">
+          Restablecer contraseña
+        </a>
+        <p style="margin-top:24px;color:#555;">Este enlace vence en 30 minutos.</p>
+        <p style="color:#555;">Si no solicitaste este cambio, puedes ignorar este correo.</p>
+      </div>
+    `,
+  });
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const email = sanitizeEmail(req.body.email);
+
+    if (!email) {
+      return res.status(400).json({
+        message: "El correo es obligatorio",
+      });
+    }
+
+    const user = await User.findOne({ where: { email } });
+
+    // Respuesta genérica para no revelar si el correo existe o no
+    if (!user) {
+      return res.json({
+        message:
+          "Si el correo existe en Corex, enviaremos un enlace para restablecer la contraseña.",
+      });
+    }
+
+    if (!user.isActive) {
+      await logSecurityEvent({
+        req,
+        user,
+        event: "password_reset_blocked_user_inactive",
+        level: "warning",
+        email,
+      });
+
+      return res.json({
+        message:
+          "Si el correo existe en Corex, enviaremos un enlace para restablecer la contraseña.",
+      });
+    }
+
+    const reset = generatePasswordReset();
+
+    await user.update({
+      passwordResetToken: reset.token,
+      passwordResetExpires: reset.expires,
+    });
+
+    user.rawPasswordResetToken = reset.token;
+
+    await sendPasswordResetEmail(user);
+
+    await logSecurityEvent({
+      req,
+      user,
+      event: "password_reset_requested",
+      level: "info",
+      email,
+    });
+
+    return res.json({
+      message:
+        "Si el correo existe en Corex, enviaremos un enlace para restablecer la contraseña.",
+    });
+  } catch (error) {
+    logger.error("FORGOT_PASSWORD_ERROR", error);
+
+    return res.status(500).json({
+      message: "Error solicitando restablecimiento de contraseña",
+    });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const token = sanitizeString(req.params.token, 255);
+    const password = req.body.password;
+
+    if (!token) {
+      return res.status(400).json({
+        message: "Token inválido",
+      });
+    }
+
+    if (!password || password.length < 8) {
+      return res.status(400).json({
+        message: "La contraseña debe tener al menos 8 caracteres",
+      });
+    }
+
+    const user = await User.findOne({
+      where: {
+        passwordResetToken: token,
+        passwordResetExpires: {
+          [Op.gt]: new Date(),
+        },
+      },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        message: "El enlace no es válido o ya expiró.",
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        message: "Este usuario está desactivado.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await user.update({
+      password: hashedPassword,
+      passwordResetToken: null,
+      passwordResetExpires: null,
+    });
+
+    await logSecurityEvent({
+      req,
+      user,
+      event: "password_reset_completed",
+      level: "info",
+      email: user.email,
+    });
+
+    return res.json({
+      message: "Contraseña actualizada correctamente. Ya puedes iniciar sesión.",
+    });
+  } catch (error) {
+    logger.error("RESET_PASSWORD_ERROR", error);
+
+    return res.status(500).json({
+      message: "Error restableciendo contraseña",
+    });
+  }
+};

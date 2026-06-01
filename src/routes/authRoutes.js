@@ -8,6 +8,9 @@ import {
   updateTenant,
   verifyEmail,
   resendVerificationEmail,
+  forgotPassword,
+  resetPassword,
+  passwordResetRateLimit,
 } from "../controllers/authController.js";
 import { protect, requireRole } from "../middlewares/authMiddleware.js";
 import {
@@ -34,5 +37,8 @@ router.post(
   resendVerificationRateLimit,
   resendVerificationEmail
 );
+
+router.post("/forgot-password", passwordResetRateLimit, forgotPassword);
+router.post("/reset-password/:token", passwordResetRateLimit, resetPassword);
 
 export default router;

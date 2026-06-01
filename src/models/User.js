@@ -62,6 +62,16 @@ export const User = sequelize.define("User", {
     type: DataTypes.DATE,
     allowNull: true,
   },
+
+  passwordResetToken: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+
+  passwordResetExpires: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
 });
 
 Tenant.hasMany(User, { foreignKey: "tenantId" });

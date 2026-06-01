@@ -172,3 +172,20 @@ export const clearLoginFailures = async (req) => {
   await redis.del(`${key}:count`);
   await redis.del(`${key}:blockedUntil`);
 };
+
+export const passwordResetRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createStore("corex:auth:password-reset:"),
+  keyGenerator: (req) => {
+    const ip = getClientIp(req);
+    const email = normalizeEmail(req.body?.email);
+
+    return `${ip}:${email || "sin-email"}`;
+  },
+  message: {
+    message: "Has solicitado demasiados enlaces de recuperación. Intenta más tarde.",
+  },
+});
