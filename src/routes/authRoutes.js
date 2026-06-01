@@ -10,7 +10,6 @@ import {
   resendVerificationEmail,
   forgotPassword,
   resetPassword,
-  passwordResetRateLimit,
 } from "../controllers/authController.js";
 import { protect, requireRole } from "../middlewares/authMiddleware.js";
 import {
@@ -20,6 +19,7 @@ import {
   registerRateLimit,
   refreshRateLimit,
   resendVerificationRateLimit,
+  passwordResetRateLimit,
 } from "../middlewares/authSecurityMiddleware.js";
 
 const router = express.Router();
