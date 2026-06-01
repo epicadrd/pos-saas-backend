@@ -630,28 +630,25 @@ export const forgotPassword = async (req, res) => {
 
     const user = await User.findOne({ where: { email } });
 
-    // Respuesta genérica para no revelar si el correo existe o no
-    if (!user) {
-      return res.json({
-        message:
-          "Si el correo existe en Corex, enviaremos un enlace para restablecer la contraseña.",
-      });
-    }
+   if (!user) {
+    return res.status(404).json({
+      message: "No encontramos una cuenta asociada a ese correo electrónico.",
+    });
+  }
 
-    if (!user.isActive) {
-      await logSecurityEvent({
-        req,
-        user,
-        event: "password_reset_blocked_user_inactive",
-        level: "warning",
-        email,
-      });
+ if (!user.isActive) {
+  await logSecurityEvent({
+    req,
+    user,
+    event: "password_reset_blocked_user_inactive",
+    level: "warning",
+    email,
+  });
 
-      return res.json({
-        message:
-          "Si el correo existe en Corex, enviaremos un enlace para restablecer la contraseña.",
-      });
-    }
+  return res.status(403).json({
+    message: "Esta cuenta está desactivada. Contacta al administrador.",
+  });
+}
 
     const reset = generatePasswordReset();
 
@@ -672,10 +669,10 @@ export const forgotPassword = async (req, res) => {
       email,
     });
 
-    return res.json({
-      message:
-        "Si el correo existe en Corex, enviaremos un enlace para restablecer la contraseña.",
-    });
+  return res.json({
+  message:
+    "Hemos enviado un enlace para restablecer tu contraseña. Revisa tu bandeja de entrada y la carpeta de spam.",
+});
   } catch (error) {
     logger.error("FORGOT_PASSWORD_ERROR", error);
 
