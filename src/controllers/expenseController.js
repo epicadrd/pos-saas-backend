@@ -501,6 +501,12 @@ export const importExpenseFromDgii = async (req, res) => {
     }
 
     const html = await dgiiRes.text();
+    console.log("supplierRnc:", supplierRnc);
+console.log("supplierName:", supplierName);
+console.log("ncf:", ncf);
+console.log("expenseDate:", expenseDate);
+console.log("tax:", tax);
+console.log("total:", total);
 
     const status = extractDgiiValue(html, "Estado");
 
