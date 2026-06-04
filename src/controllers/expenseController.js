@@ -168,7 +168,12 @@ export const importExpenseFromDgii = async (req, res) => {
     const params = parsedUrl.searchParams;
 
     const urlSupplierRnc = params.get("RncEmisor") || "";
-    const urlNcf = params.get("ENCF") || "";
+    const urlNcf =
+      params.get("ENCF") ||
+      params.get("Encf") ||
+      params.get("eNCF") ||
+      params.get("encf") ||
+      "";
     const urlDate = params.get("FechaEmision") || "";
     const urlTotal = params.get("MontoTotal") || "";
 
@@ -202,7 +207,7 @@ export const importExpenseFromDgii = async (req, res) => {
       extractDgiiValue(html, "Razón social emisor") ||
       `Proveedor RNC ${supplierRnc}`;
 
-    const ncf = extractDgiiValue(html, "e-NCF") || urlNcf;
+    const ncf = urlNcf || extractDgiiValue(html, "e-NCF");
 
     const expenseDate =
       normalizeDgiiDate(extractDgiiValue(html, "Fecha de Emisión")) ||
@@ -241,7 +246,7 @@ export const importExpenseFromDgii = async (req, res) => {
       total: total.toFixed(2),
       subtotal: subtotal.toFixed(2),
       category: "Operativo",
-      description: `Factura electrónica ${ncf} - ${supplierName}`,
+      description: "",
       notes: `Datos importados desde enlace de verificación DGII. Verifique la información antes de guardar.\n${rawUrl}`,
     });
   } catch (error) {
