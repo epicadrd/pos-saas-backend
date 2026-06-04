@@ -142,94 +142,6 @@ export const getExpenses = async (req, res) => {
   }
 };
 
-export const createExpense = async (req, res) => {
-  try {
-    const tenantId = req.user.tenantId;
-
-    const category = sanitizeString(req.body.category, 80);
-    const description = sanitizeString(req.body.description, 1000);
-    const supplierId = sanitizeInteger(req.body.supplierId, 0);
-    const supplierName = sanitizeString(req.body.supplierName, 120);
-    const supplierRnc = sanitizeString(req.body.supplierRnc, 30);
-    const ncf = sanitizeString(req.body.ncf, 30)?.toUpperCase() || null;
-    const expenseDate = sanitizeString(req.body.expenseDate, 20);
-    const paymentMethod = sanitizeString(req.body.paymentMethod, 30) || "cash";
-    const status = sanitizeString(req.body.status, 30) || "paid";
-    const notes = sanitizeString(req.body.notes, 2000);
-
-    if (!category) {
-      return res.status(400).json({
-        message: "La categoría es obligatoria",
-      });
-    }
-
-    if (!description) {
-      return res.status(400).json({
-        message: "La descripción es obligatoria",
-      });
-    }
-
-    if (!expenseDate) {
-      return res.status(400).json({
-        message: "La fecha es obligatoria",
-      });
-    }
-
-    const amounts = normalizeAmounts(req.body);
-
-    if (amounts.total <= 0) {
-      return res.status(400).json({
-        message: "El total debe ser mayor que cero",
-      });
-    }
-
-    await validateSupplierTenant(supplierId, tenantId);
-
-    const expense = await Expense.create({
-      tenantId,
-      expenseNumber: await buildExpenseNumber(tenantId),
-      category: category.trim(),
-      description: description.trim(),
-      supplierId: supplierId || null,
-      supplierName,
-      supplierRnc,
-      ncf: ncf?.trim()?.toUpperCase() || null,
-      expenseDate,
-      paymentMethod: paymentMethod || "cash",
-      status: status || "paid",
-      notes,
-      ...amounts,
-      createdBy: req.user.id,
-      updatedBy: req.user.id,
-      
-    });
-
-    await logActivity({
-      tenantId,
-
-      userId: req.user.id,
-
-      module: "gastos",
-
-      action: "create",
-
-      description: `Registró el gasto ${expense.expenseNumber} por RD$${expense.total}`,
-
-      metadata: {
-        expenseId: expense.id,
-      },
-    });
-
-    res.status(201).json(expense);
-  } catch (error) {
-    console.log("CREATE EXPENSE ERROR:", error);
-
-    res.status(500).json({
-      message: "Error creando gasto",
-    });
-  }
-};
-
 export const updateExpense = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
@@ -434,3 +346,203 @@ export const getExpenseStats = async (req, res) => {
     });
   }
 };
+
+ const decodeHtml = (text = "") =>
+    text
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&#225;/g, "á")
+      .replace(/&#233;/g, "é")
+      .replace(/&#237;/g, "í")
+      .replace(/&#243;/g, "ó")
+      .replace(/&#250;/g, "ú")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const extractDgiiValue = (html, label) => {
+    const clean = html.replace(/\n/g, " ").replace(/\r/g, " ");
+    const regex = new RegExp(
+      `${label}[\\s\\S]*?<td[^>]*>([\\s\\S]*?)<\\/td>`,
+      "i"
+    );
+    const match = clean.match(regex);
+    return match
+      ? decodeHtml(match[1].replace(/<[^>]+>/g, ""))
+      : "";
+  };
+  const normalizeDgiiDate = (date = "") => {
+    const [day, month, year] = date.split("-");
+
+    if (!day || !month || !year) return "";
+
+    return `${year}-${month}-${day}`;
+  };
+  const parseAmount = (value = "") =>
+    Number(value.replace(/,/g, "").trim() || 0);
+
+
+export const createExpense = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+
+    const category = sanitizeString(req.body.category, 80);
+    const description = sanitizeString(req.body.description, 1000);
+    const supplierId = sanitizeInteger(req.body.supplierId, 0);
+    const supplierName = sanitizeString(req.body.supplierName, 120);
+    const supplierRnc = sanitizeString(req.body.supplierRnc, 30);
+    const ncf = sanitizeString(req.body.ncf, 30)?.toUpperCase() || null;
+    const expenseDate = sanitizeString(req.body.expenseDate, 20);
+    const paymentMethod = sanitizeString(req.body.paymentMethod, 30) || "cash";
+    const status = sanitizeString(req.body.status, 30) || "paid";
+    const notes = sanitizeString(req.body.notes, 2000);
+
+    if (!category) {
+      return res.status(400).json({
+        message: "La categoría es obligatoria",
+      });
+    }
+
+    if (!description) {
+      return res.status(400).json({
+        message: "La descripción es obligatoria",
+      });
+    }
+
+    if (!expenseDate) {
+      return res.status(400).json({
+        message: "La fecha es obligatoria",
+      });
+    }
+
+    const amounts = normalizeAmounts(req.body);
+
+    if (amounts.total <= 0) {
+      return res.status(400).json({
+        message: "El total debe ser mayor que cero",
+      });
+    }
+
+    await validateSupplierTenant(supplierId, tenantId);
+
+    const expense = await Expense.create({
+      tenantId,
+      expenseNumber: await buildExpenseNumber(tenantId),
+      category: category.trim(),
+      description: description.trim(),
+      supplierId: supplierId || null,
+      supplierName,
+      supplierRnc,
+      ncf: ncf?.trim()?.toUpperCase() || null,
+      expenseDate,
+      paymentMethod: paymentMethod || "cash",
+      status: status || "paid",
+      notes,
+      ...amounts,
+      createdBy: req.user.id,
+      updatedBy: req.user.id,
+      
+    });
+
+    await logActivity({
+      tenantId,
+
+      userId: req.user.id,
+
+      module: "gastos",
+
+      action: "create",
+
+      description: `Registró el gasto ${expense.expenseNumber} por RD$${expense.total}`,
+
+      metadata: {
+        expenseId: expense.id,
+      },
+    });
+
+    res.status(201).json(expense);
+  } catch (error) {
+    console.log("CREATE EXPENSE ERROR:", error);
+
+    res.status(500).json({
+      message: "Error creando gasto",
+    });
+  }
+};
+
+export const importExpenseFromDgii = async (req, res) => {
+  try {
+    const rawUrl = sanitizeString(req.body.url, 500);
+
+    if (!rawUrl) {
+      return res.status(400).json({
+        message: "El enlace de verificación es obligatorio",
+      });
+    }
+
+    const parsedUrl = new URL(rawUrl);
+
+    if (parsedUrl.hostname !== "ecf.dgii.gov.do") {
+      return res.status(400).json({
+        message: "Solo se permiten enlaces de verificación de la DGII",
+      });
+    }
+
+    const dgiiRes = await fetch(rawUrl, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Corex/1.0",
+      },
+    });
+
+    if (!dgiiRes.ok) {
+      return res.status(400).json({
+        message: "No se pudo consultar el enlace de la DGII",
+      });
+    }
+
+    const html = await dgiiRes.text();
+
+    const status = extractDgiiValue(html, "Estado");
+
+    if (status && status.toLowerCase() !== "aceptado") {
+      return res.status(400).json({
+        message: `La factura aparece con estado: ${status}`,
+      });
+    }
+
+    const supplierRnc = extractDgiiValue(html, "RNC Emisor");
+    const supplierName = extractDgiiValue(html, "Razón social emisor");
+    const ncf = extractDgiiValue(html, "e-NCF");
+    const expenseDate = normalizeDgiiDate(
+      extractDgiiValue(html, "Fecha de Emisión")
+    );
+    const tax = parseAmount(extractDgiiValue(html, "Total de ITBIS"));
+    const total = parseAmount(extractDgiiValue(html, "Monto Total"));
+    const subtotal = Math.max(total - tax, 0);
+
+    if (!supplierRnc || !supplierName || !ncf || !expenseDate || !total) {
+      return res.status(400).json({
+        message: "No se pudieron leer todos los datos de la factura",
+      });
+    }
+
+    res.json({
+      supplierName,
+      supplierRnc,
+      ncf,
+      expenseDate,
+      tax: tax.toFixed(2),
+      total: total.toFixed(2),
+      subtotal: subtotal.toFixed(2),
+      category: "Operativo",
+      description: `Factura electrónica ${ncf} - ${supplierName}`,
+      notes: `Datos importados desde enlace de verificación DGII. Verifique la información antes de guardar.\n${rawUrl}`,
+    });
+  } catch (error) {
+    console.log("IMPORT DGII EXPENSE ERROR:", error);
+
+    res.status(500).json({
+      message: "Error importando datos desde DGII",
+    });
+  }
+  };
