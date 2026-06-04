@@ -9,6 +9,42 @@ import {
 
 const money = (value) => Number(value || 0);
 
+const decodeHtml = (text = "") =>
+  text
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&#225;/g, "á")
+    .replace(/&#233;/g, "é")
+    .replace(/&#237;/g, "í")
+    .replace(/&#243;/g, "ó")
+    .replace(/&#250;/g, "ú")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const extractDgiiValue = (html, label) => {
+  const clean = html.replace(/\n/g, " ").replace(/\r/g, " ");
+
+  const regex = new RegExp(
+    `${label}[\\s\\S]*?<td[^>]*>([\\s\\S]*?)<\\/td>`,
+    "i"
+  );
+
+  const match = clean.match(regex);
+
+  return match ? decodeHtml(match[1].replace(/<[^>]+>/g, "")) : "";
+};
+
+const normalizeDgiiDate = (date = "") => {
+  const [day, month, year] = date.split("-");
+
+  if (!day || !month || !year) return "";
+
+  return `${year}-${month}-${day}`;
+};
+
+const parseAmount = (value = "") =>
+  Number(String(value).replace(/,/g, "").trim() || 0);
+
 const buildExpenseNumber = async (tenantId) => {
   const count = await Expense.count({ where: { tenantId } });
 
@@ -26,7 +62,9 @@ const validateSupplierTenant = async (supplierId, tenantId) => {
   });
 
   if (!supplier) {
-    const error = new Error("El proveedor seleccionado no existe o no pertenece a esta empresa");
+    const error = new Error(
+      "El proveedor seleccionado no existe o no pertenece a esta empresa"
+    );
     error.status = 400;
     throw error;
   }
@@ -39,9 +77,7 @@ const normalizeAmounts = ({ subtotal, tax, total }) => {
   const cleanTax = money(tax);
 
   const cleanTotal =
-    total !== undefined &&
-    total !== null &&
-    total !== ""
+    total !== undefined && total !== null && total !== ""
       ? money(total)
       : cleanSubtotal + cleanTax;
 
@@ -65,67 +101,36 @@ export const getExpenses = async (req, res) => {
     const where = { tenantId };
 
     if (category) where.category = category;
-
     if (status) where.status = status;
-
-    if (supplierId) {
-      where.supplierId = supplierId;
-    }
+    if (supplierId) where.supplierId = supplierId;
 
     if (from || to) {
       where.expenseDate = {};
-
       if (from) where.expenseDate[Op.gte] = from;
-
       if (to) where.expenseDate[Op.lte] = to;
     }
 
     if (search) {
       where[Op.or] = [
-        {
-          ncf: {
-            [Op.like]: `%${search}%`,
-          },
-        },
-        {
-          expenseNumber: {
-            [Op.like]: `%${search}%`,
-          },
-        },
-
-        {
-          description: {
-            [Op.like]: `%${search}%`,
-          },
-        },
-
-        {
-          supplierName: {
-            [Op.like]: `%${search}%`,
-          },
-        },
-
-        {
-          category: {
-            [Op.like]: `%${search}%`,
-          },
-        },
+        { ncf: { [Op.like]: `%${search}%` } },
+        { expenseNumber: { [Op.like]: `%${search}%` } },
+        { description: { [Op.like]: `%${search}%` } },
+        { supplierName: { [Op.like]: `%${search}%` } },
+        { category: { [Op.like]: `%${search}%` } },
       ];
     }
 
     const expenses = await Expense.findAll({
       where,
-
       include: [
         {
-           model: Supplier,
+          model: Supplier,
           as: "supplier",
           where: { tenantId },
           required: false,
           attributes: ["id", "name", "rnc", "phone", "email"],
         },
       ],
-
       order: [
         ["expenseDate", "DESC"],
         ["createdAt", "DESC"],
@@ -142,244 +147,111 @@ export const getExpenses = async (req, res) => {
   }
 };
 
-export const updateExpense = async (req, res) => {
+export const importExpenseFromDgii = async (req, res) => {
   try {
-    const tenantId = req.user.tenantId;
+    const rawUrl = sanitizeString(req.body.url, 500);
 
-    const payload = {
-    category: sanitizeString(req.body.category, 80),
-    description: sanitizeString(req.body.description, 1000),
-    supplierId: req.body.supplierId !== undefined && req.body.supplierId !== null && req.body.supplierId !== "" ? sanitizeInteger(req.body.supplierId, 0): null,
-    supplierName: sanitizeString(req.body.supplierName, 120),
-    supplierRnc: sanitizeString(req.body.supplierRnc, 30),
-    ncf: sanitizeString(req.body.ncf, 30)?.toUpperCase() || null,
-    expenseDate: sanitizeString(req.body.expenseDate, 20),
-    paymentMethod: sanitizeString(req.body.paymentMethod, 30) || "cash",
-    status: sanitizeString(req.body.status, 30) || "paid",
-    notes: sanitizeString(req.body.notes, 2000),
-    subtotal: sanitizeNumber(req.body.subtotal),
-    tax: sanitizeNumber(req.body.tax),
-    total: sanitizeNumber(req.body.total),
-    updatedBy: req.user.id,
-  };
-
-    const expense = await Expense.findOne({
-      where: {
-        id: req.params.id,
-        tenantId,
-      },
-    });
-
-    if (!expense) {
-      return res.status(404).json({
-        message: "Gasto no encontrado",
+    if (!rawUrl) {
+      return res.status(400).json({
+        message: "El enlace de verificación es obligatorio",
       });
     }
 
-    if (
-      req.body.subtotal !== undefined ||
-      req.body.tax !== undefined ||
-      req.body.total !== undefined
-    ) {
-      Object.assign(
-        payload,
+    const parsedUrl = new URL(rawUrl);
 
-        normalizeAmounts({
-          subtotal:
-            req.body.subtotal ?? expense.subtotal,
-
-          tax:
-            req.body.tax ?? expense.tax,
-
-          total:
-            req.body.total ?? expense.total,
-        })
-      );
-    }
-
-    if (req.body.supplierId !== undefined) {
-      await validateSupplierTenant(payload.supplierId, tenantId);
-    }
-
-    await expense.update(payload);
-
-    await logActivity({
-      tenantId,
-      userId: req.user.id,
-      module: "gastos",
-      action: "update",
-      description: `Actualizó el gasto ${expense.expenseNumber}`,
-      metadata: {
-        expenseId: expense.id,
-      },
-    });
-
-    res.json(expense);
-  } catch (error) {
-    console.log("UPDATE EXPENSE ERROR:", error);
-
-    res.status(500).json({
-      message: "Error actualizando gasto",
-    });
-  }
-};
-
-export const deleteExpense = async (req, res) => {
-  try {
-    const tenantId = req.user.tenantId;
-
-    const expense = await Expense.findOne({
-      where: {
-        id: req.params.id,
-        tenantId,
-      },
-    });
-
-    if (!expense) {
-      return res.status(404).json({
-        message: "Gasto no encontrado",
+    if (parsedUrl.hostname !== "ecf.dgii.gov.do") {
+      return res.status(400).json({
+        message: "Solo se permiten enlaces de verificación de la DGII",
       });
     }
 
-    await expense.destroy();
+    const params = parsedUrl.searchParams;
 
-    await logActivity({
-      tenantId,
+    const urlSupplierRnc = params.get("RncEmisor") || "";
+    const urlNcf = params.get("ENCF") || "";
+    const urlDate = params.get("FechaEmision") || "";
+    const urlTotal = params.get("MontoTotal") || "";
 
-      userId: req.user.id,
-
-      module: "gastos",
-
-      action: "delete",
-
-      description: `Eliminó el gasto ${expense.expenseNumber}`,
-
-      metadata: {
-        expenseId: expense.id,
+    const dgiiRes = await fetch(rawUrl, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Corex/1.0",
       },
     });
 
+    if (!dgiiRes.ok) {
+      return res.status(400).json({
+        message: "No se pudo consultar el enlace de la DGII",
+      });
+    }
+
+    const html = await dgiiRes.text();
+
+    const status = extractDgiiValue(html, "Estado");
+
+    if (status && status.toLowerCase() !== "aceptado") {
+      return res.status(400).json({
+        message: `La factura aparece con estado: ${status}`,
+      });
+    }
+
+    const supplierRnc =
+      extractDgiiValue(html, "RNC Emisor") || urlSupplierRnc;
+
+    const supplierName =
+      extractDgiiValue(html, "Razón social emisor") ||
+      `Proveedor RNC ${supplierRnc}`;
+
+    const ncf = extractDgiiValue(html, "e-NCF") || urlNcf;
+
+    const expenseDate =
+      normalizeDgiiDate(extractDgiiValue(html, "Fecha de Emisión")) ||
+      normalizeDgiiDate(urlDate);
+
+    const tax = parseAmount(extractDgiiValue(html, "Total de ITBIS"));
+
+    const total =
+      parseAmount(extractDgiiValue(html, "Monto Total")) ||
+      parseAmount(urlTotal);
+
+    const subtotal = Math.max(total - tax, 0);
+
+    console.log("DGII IMPORT DATA:", {
+      supplierRnc,
+      supplierName,
+      ncf,
+      expenseDate,
+      tax,
+      total,
+      subtotal,
+    });
+
+    if (!supplierRnc || !ncf || !expenseDate || !total) {
+      return res.status(400).json({
+        message: "No se pudieron leer los datos principales de la factura",
+      });
+    }
+
     res.json({
-      message: "Gasto eliminado",
+      supplierName,
+      supplierRnc,
+      ncf,
+      expenseDate,
+      tax: tax.toFixed(2),
+      total: total.toFixed(2),
+      subtotal: subtotal.toFixed(2),
+      category: "Operativo",
+      description: `Factura electrónica ${ncf} - ${supplierName}`,
+      notes: `Datos importados desde enlace de verificación DGII. Verifique la información antes de guardar.\n${rawUrl}`,
     });
   } catch (error) {
-    console.log("DELETE EXPENSE ERROR:", error);
+    console.log("IMPORT DGII EXPENSE ERROR:", error);
 
     res.status(500).json({
-      message: "Error eliminando gasto",
+      message: "Error importando datos desde DGII",
     });
   }
 };
-
-export const getExpenseStats = async (req, res) => {
-  try {
-    const tenantId = req.user.tenantId;
-
-    const start = new Date();
-
-    start.setDate(1);
-
-    start.setHours(0, 0, 0, 0);
-
-    const [
-      monthTotal,
-      pendingTotal,
-      byCategory,
-    ] = await Promise.all([
-      Expense.sum("total", {
-        where: {
-          tenantId,
-
-          status: "paid",
-
-          expenseDate: {
-            [Op.gte]: start,
-          },
-        },
-      }),
-
-      Expense.sum("total", {
-        where: {
-          tenantId,
-
-          status: "pending",
-        },
-      }),
-
-      Expense.findAll({
-        where: {
-          tenantId,
-
-          status: {
-            [Op.ne]: "cancelled",
-          },
-
-          expenseDate: {
-            [Op.gte]: start,
-          },
-        },
-
-        attributes: [
-          "category",
-
-          [fn("SUM", col("total")), "total"],
-        ],
-
-        group: ["category"],
-
-        raw: true,
-      }),
-    ]);
-
-    res.json({
-      monthTotal: money(monthTotal),
-
-      pendingTotal: money(pendingTotal),
-
-      byCategory,
-    });
-  } catch (error) {
-    console.log("EXPENSE STATS ERROR:", error);
-
-    res.status(500).json({
-      message: "Error cargando estadísticas de gastos",
-    });
-  }
-};
-
- const decodeHtml = (text = "") =>
-    text
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&#225;/g, "á")
-      .replace(/&#233;/g, "é")
-      .replace(/&#237;/g, "í")
-      .replace(/&#243;/g, "ó")
-      .replace(/&#250;/g, "ú")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    const extractDgiiValue = (html, label) => {
-    const clean = html.replace(/\n/g, " ").replace(/\r/g, " ");
-    const regex = new RegExp(
-      `${label}[\\s\\S]*?<td[^>]*>([\\s\\S]*?)<\\/td>`,
-      "i"
-    );
-    const match = clean.match(regex);
-    return match
-      ? decodeHtml(match[1].replace(/<[^>]+>/g, ""))
-      : "";
-  };
-  const normalizeDgiiDate = (date = "") => {
-    const [day, month, year] = date.split("-");
-
-    if (!day || !month || !year) return "";
-
-    return `${year}-${month}-${day}`;
-  };
-  const parseAmount = (value = "") =>
-    Number(value.replace(/,/g, "").trim() || 0);
-
 
 export const createExpense = async (req, res) => {
   try {
@@ -440,20 +312,14 @@ export const createExpense = async (req, res) => {
       ...amounts,
       createdBy: req.user.id,
       updatedBy: req.user.id,
-      
     });
 
     await logActivity({
       tenantId,
-
       userId: req.user.id,
-
       module: "gastos",
-
       action: "create",
-
       description: `Registró el gasto ${expense.expenseNumber} por RD$${expense.total}`,
-
       metadata: {
         expenseId: expense.id,
       },
@@ -469,86 +335,181 @@ export const createExpense = async (req, res) => {
   }
 };
 
-export const importExpenseFromDgii = async (req, res) => {
+export const updateExpense = async (req, res) => {
   try {
-    const rawUrl = sanitizeString(req.body.url, 500);
+    const tenantId = req.user.tenantId;
 
-    if (!rawUrl) {
-      return res.status(400).json({
-        message: "El enlace de verificación es obligatorio",
-      });
-    }
+    const payload = {
+      category: sanitizeString(req.body.category, 80),
+      description: sanitizeString(req.body.description, 1000),
+      supplierId:
+        req.body.supplierId !== undefined &&
+        req.body.supplierId !== null &&
+        req.body.supplierId !== ""
+          ? sanitizeInteger(req.body.supplierId, 0)
+          : null,
+      supplierName: sanitizeString(req.body.supplierName, 120),
+      supplierRnc: sanitizeString(req.body.supplierRnc, 30),
+      ncf: sanitizeString(req.body.ncf, 30)?.toUpperCase() || null,
+      expenseDate: sanitizeString(req.body.expenseDate, 20),
+      paymentMethod: sanitizeString(req.body.paymentMethod, 30) || "cash",
+      status: sanitizeString(req.body.status, 30) || "paid",
+      notes: sanitizeString(req.body.notes, 2000),
+      subtotal: sanitizeNumber(req.body.subtotal),
+      tax: sanitizeNumber(req.body.tax),
+      total: sanitizeNumber(req.body.total),
+      updatedBy: req.user.id,
+    };
 
-    const parsedUrl = new URL(rawUrl);
-
-    if (parsedUrl.hostname !== "ecf.dgii.gov.do") {
-      return res.status(400).json({
-        message: "Solo se permiten enlaces de verificación de la DGII",
-      });
-    }
-
-    const dgiiRes = await fetch(rawUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Corex/1.0",
+    const expense = await Expense.findOne({
+      where: {
+        id: req.params.id,
+        tenantId,
       },
     });
 
-    if (!dgiiRes.ok) {
-      return res.status(400).json({
-        message: "No se pudo consultar el enlace de la DGII",
+    if (!expense) {
+      return res.status(404).json({
+        message: "Gasto no encontrado",
       });
     }
 
-    const html = await dgiiRes.text();
-    console.log("supplierRnc:", supplierRnc);
-console.log("supplierName:", supplierName);
-console.log("ncf:", ncf);
-console.log("expenseDate:", expenseDate);
-console.log("tax:", tax);
-console.log("total:", total);
-
-    const status = extractDgiiValue(html, "Estado");
-
-    if (status && status.toLowerCase() !== "aceptado") {
-      return res.status(400).json({
-        message: `La factura aparece con estado: ${status}`,
-      });
+    if (
+      req.body.subtotal !== undefined ||
+      req.body.tax !== undefined ||
+      req.body.total !== undefined
+    ) {
+      Object.assign(
+        payload,
+        normalizeAmounts({
+          subtotal: req.body.subtotal ?? expense.subtotal,
+          tax: req.body.tax ?? expense.tax,
+          total: req.body.total ?? expense.total,
+        })
+      );
     }
 
-    const supplierRnc = extractDgiiValue(html, "RNC Emisor");
-    const supplierName = extractDgiiValue(html, "Razón social emisor");
-    const ncf = extractDgiiValue(html, "e-NCF");
-    const expenseDate = normalizeDgiiDate(
-      extractDgiiValue(html, "Fecha de Emisión")
-    );
-    const tax = parseAmount(extractDgiiValue(html, "Total de ITBIS"));
-    const total = parseAmount(extractDgiiValue(html, "Monto Total"));
-    const subtotal = Math.max(total - tax, 0);
-
-    if (!supplierRnc || !supplierName || !ncf || !expenseDate || !total) {
-      return res.status(400).json({
-        message: "No se pudieron leer todos los datos de la factura",
-      });
+    if (req.body.supplierId !== undefined) {
+      await validateSupplierTenant(payload.supplierId, tenantId);
     }
 
-    res.json({
-      supplierName,
-      supplierRnc,
-      ncf,
-      expenseDate,
-      tax: tax.toFixed(2),
-      total: total.toFixed(2),
-      subtotal: subtotal.toFixed(2),
-      category: "Operativo",
-      description: `Factura electrónica ${ncf} - ${supplierName}`,
-      notes: `Datos importados desde enlace de verificación DGII. Verifique la información antes de guardar.\n${rawUrl}`,
+    await expense.update(payload);
+
+    await logActivity({
+      tenantId,
+      userId: req.user.id,
+      module: "gastos",
+      action: "update",
+      description: `Actualizó el gasto ${expense.expenseNumber}`,
+      metadata: {
+        expenseId: expense.id,
+      },
     });
+
+    res.json(expense);
   } catch (error) {
-    console.log("IMPORT DGII EXPENSE ERROR:", error);
+    console.log("UPDATE EXPENSE ERROR:", error);
 
     res.status(500).json({
-      message: "Error importando datos desde DGII",
+      message: "Error actualizando gasto",
     });
   }
-  };
+};
+
+export const deleteExpense = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+
+    const expense = await Expense.findOne({
+      where: {
+        id: req.params.id,
+        tenantId,
+      },
+    });
+
+    if (!expense) {
+      return res.status(404).json({
+        message: "Gasto no encontrado",
+      });
+    }
+
+    await expense.destroy();
+
+    await logActivity({
+      tenantId,
+      userId: req.user.id,
+      module: "gastos",
+      action: "delete",
+      description: `Eliminó el gasto ${expense.expenseNumber}`,
+      metadata: {
+        expenseId: expense.id,
+      },
+    });
+
+    res.json({
+      message: "Gasto eliminado",
+    });
+  } catch (error) {
+    console.log("DELETE EXPENSE ERROR:", error);
+
+    res.status(500).json({
+      message: "Error eliminando gasto",
+    });
+  }
+};
+
+export const getExpenseStats = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+
+    const start = new Date();
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+
+    const [monthTotal, pendingTotal, byCategory] = await Promise.all([
+      Expense.sum("total", {
+        where: {
+          tenantId,
+          status: "paid",
+          expenseDate: {
+            [Op.gte]: start,
+          },
+        },
+      }),
+
+      Expense.sum("total", {
+        where: {
+          tenantId,
+          status: "pending",
+        },
+      }),
+
+      Expense.findAll({
+        where: {
+          tenantId,
+          status: {
+            [Op.ne]: "cancelled",
+          },
+          expenseDate: {
+            [Op.gte]: start,
+          },
+        },
+        attributes: ["category", [fn("SUM", col("total")), "total"]],
+        group: ["category"],
+        raw: true,
+      }),
+    ]);
+
+    res.json({
+      monthTotal: money(monthTotal),
+      pendingTotal: money(pendingTotal),
+      byCategory,
+    });
+  } catch (error) {
+    console.log("EXPENSE STATS ERROR:", error);
+
+    res.status(500).json({
+      message: "Error cargando estadísticas de gastos",
+    });
+  }
+};
