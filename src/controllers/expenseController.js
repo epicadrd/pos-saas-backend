@@ -21,19 +21,47 @@ const decodeHtml = (text = "") =>
     .replace(/\s+/g, " ")
     .trim();
 
-const extractDgiiValue = (html, label) => {
-  const clean = html.replace(/\n/g, " ").replace(/\r/g, " ");
+const normalizeText = (text = "") =>
+  decodeHtml(String(text))
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\s:]+/g, " ")
+    .trim()
+    .toLowerCase();
 
-  const regex = new RegExp(
-    `${label}[\\s\\S]*?<td[^>]*>([\\s\\S]*?)<\\/td>`,
-    "i"
-  );
+const stripTags = (html = "") =>
+  decodeHtml(String(html).replace(/<[^>]+>/g, " "));
 
-  const match = clean.match(regex);
+const getUrlParam = (params, names = []) => {
+  for (const name of names) {
+    const value = params.get(name);
 
-  return match ? decodeHtml(match[1].replace(/<[^>]+>/g, "")) : "";
+    if (value) return value.trim();
+  }
+
+  return "";
 };
 
+const extractDgiiValue = (html, label) => {
+  const normalizedLabel = normalizeText(label);
+
+  const rows = String(html).match(/<tr[\s\S]*?<\/tr>/gi) || [];
+
+  for (const row of rows) {
+    const cells = row.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || [];
+
+    if (cells.length < 2) continue;
+
+    const key = normalizeText(stripTags(cells[0]));
+    const value = stripTags(cells[1]).replace(/\s+/g, " ").trim();
+
+    if (key === normalizedLabel || key.includes(normalizedLabel)) {
+      return value;
+    }
+  }
+
+  return "";
+};
 const normalizeDgiiDate = (date = "") => {
   const [day, month, year] = date.split("-");
 
@@ -167,59 +195,91 @@ export const importExpenseFromDgii = async (req, res) => {
 
     const params = parsedUrl.searchParams;
 
-    const urlSupplierRnc = params.get("RncEmisor") || "";
-    const urlNcf =
-      params.get("ENCF") ||
-      params.get("Encf") ||
-      params.get("eNCF") ||
-      params.get("encf") ||
-      "";
-    const urlDate = params.get("FechaEmision") || "";
-    const urlTotal = params.get("MontoTotal") || "";
+   const urlSupplierRnc = getUrlParam(params, [
+      "RncEmisor",
+      "RNCEmisor",
+      "rncEmisor",
+      "rnc_emisor",
+    ]);
 
-    const dgiiRes = await fetch(rawUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Corex/1.0",
-      },
-    });
+    const urlNcf = getUrlParam(params, [
+      "ENCF",
+      "Encf",
+      "eNCF",
+      "encf",
+      "NCF",
+      "ncf",
+    ]);
 
-    if (!dgiiRes.ok) {
-      return res.status(400).json({
-        message: "No se pudo consultar el enlace de la DGII",
-      });
-    }
+    const urlDate = getUrlParam(params, [
+      "FechaEmision",
+      "fechaEmision",
+      "Fecha",
+      "fecha",
+    ]);
 
-    const html = await dgiiRes.text();
+    const urlTotal = getUrlParam(params, [
+      "MontoTotal",
+      "montoTotal",
+      "Total",
+      "total",
+    ]);
 
-    const status = extractDgiiValue(html, "Estado");
+    let html = "";
 
-    if (status && status.toLowerCase() !== "aceptado") {
-      return res.status(400).json({
-        message: `La factura aparece con estado: ${status}`,
-      });
-    }
+try {
+  const dgiiRes = await fetch(rawUrl, {
+    method: "GET",
+    headers: {
+      "User-Agent": "Mozilla/5.0 Corex/1.0",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
 
-    const supplierRnc =
-      extractDgiiValue(html, "RNC Emisor") || urlSupplierRnc;
+  if (dgiiRes.ok) {
+    html = await dgiiRes.text();
+  }
+} catch (fetchError) {
+  console.log("DGII FETCH WARNING:", fetchError.message);
+}
+ 
 
-    const supplierName =
-      extractDgiiValue(html, "Razón social emisor") ||
-      `Proveedor RNC ${supplierRnc}`;
 
-    const ncf = urlNcf || extractDgiiValue(html, "e-NCF");
+if (status && normalizeText(status) !== "aceptado") {
+  return res.status(400).json({
+    message: `La factura aparece con estado: ${status}`,
+  });
+}
 
-    const expenseDate =
-      normalizeDgiiDate(extractDgiiValue(html, "Fecha de Emisión")) ||
-      normalizeDgiiDate(urlDate);
+const supplierRnc =
+  extractDgiiValue(html, "RNC Emisor") || urlSupplierRnc;
 
-    const tax = parseAmount(extractDgiiValue(html, "Total de ITBIS"));
+const supplierName =
+  extractDgiiValue(html, "Razón social emisor") ||
+  extractDgiiValue(html, "Razon social emisor") ||
+  "";
 
-    const total =
-      parseAmount(extractDgiiValue(html, "Monto Total")) ||
-      parseAmount(urlTotal);
+const ncf =
+  urlNcf ||
+  extractDgiiValue(html, "e-NCF") ||
+  extractDgiiValue(html, "ENCF");
 
-    const subtotal = Math.max(total - tax, 0);
+const expenseDate =
+  normalizeDgiiDate(extractDgiiValue(html, "Fecha de Emisión")) ||
+  normalizeDgiiDate(extractDgiiValue(html, "Fecha de Emision")) ||
+  normalizeDgiiDate(urlDate);
+
+const tax = parseAmount(
+  extractDgiiValue(html, "Total de ITBIS") ||
+    extractDgiiValue(html, "ITBIS")
+);
+
+const total =
+  parseAmount(extractDgiiValue(html, "Monto Total")) ||
+  parseAmount(urlTotal);
+
+const subtotal = Math.max(total - tax, 0);
 
     console.log("DGII IMPORT DATA:", {
       supplierRnc,
