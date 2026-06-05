@@ -225,7 +225,7 @@ export const importExpenseFromDgii = async (req, res) => {
       "total",
     ]);
 
-    let html = "";
+   let html = "";
 
 try {
   const dgiiRes = await fetch(rawUrl, {
@@ -244,7 +244,7 @@ try {
   console.log("DGII FETCH WARNING:", fetchError.message);
 }
  
-
+const status = extractDgiiValue(html, "Estado");
 
 if (status && normalizeText(status) !== "aceptado") {
   return res.status(400).json({
@@ -291,11 +291,11 @@ const subtotal = Math.max(total - tax, 0);
       subtotal,
     });
 
-    if (!supplierRnc || !ncf || !expenseDate || !total) {
-      return res.status(400).json({
-        message: "No se pudieron leer los datos principales de la factura",
-      });
-    }
+   if (!ncf || !expenseDate || !total) {
+    return res.status(400).json({
+      message: "No se pudieron leer los datos principales de la factura",
+    });
+  }
 
     res.json({
       supplierName,
