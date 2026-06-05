@@ -258,12 +258,7 @@ const supplierRnc =
 const supplierName =
   extractDgiiValue(html, "Razón social emisor") ||
   extractDgiiValue(html, "Razon social emisor") ||
-  extractDgiiValue(html, "Nombre Emisor") ||
-  extractDgiiValue(html, "Emisor") ||
   "";
-
-  console.log("SUPPLIER NAME DGII:", supplierName);
-
 
 const ncf =
   urlNcf ||
