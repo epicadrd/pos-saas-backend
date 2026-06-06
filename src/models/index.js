@@ -18,6 +18,8 @@ import { ActivityLog } from "./ActivityLog.js";
 import { Expense } from "./Expense.js";
 import { SecurityLog } from "./SecurityLog.js";
 import { AccessLog } from "./AccessLog.js";
+import { InventoryCount } from "./InventoryCount.js";
+import { InventoryCountItem } from "./InventoryCountItem.js";
 
 Invoice.belongsTo(User, {
   foreignKey: "createdBy",
@@ -118,4 +120,6 @@ export {
   Expense,
   SecurityLog,
   AccessLog,
+  InventoryCount,
+  InventoryCountItem,
 };

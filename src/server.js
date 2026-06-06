@@ -32,6 +32,7 @@ import { logger } from "./utils/secureLogger.js";
 import { requestIdMiddleware } from "./middlewares/requestIdMiddleware.js";
 import { accessLogMiddleware } from "./middlewares/accessLogMiddleware.js";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
+import inventoryCountRoutes from "./routes/inventoryCountRoutes.js";
 
 dotenv.config();
 
@@ -134,6 +135,7 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/billing", billingRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/inventory-counts", inventoryCountRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/quotes", quoteRoutes);
 app.use("/api/delivery-notes", deliveryNoteRoutes);
