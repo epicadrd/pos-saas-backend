@@ -33,10 +33,12 @@ const stripTags = (html = "") =>
   decodeHtml(String(html).replace(/<[^>]+>/g, " "));
 
 const getUrlParam = (params, names = []) => {
-  for (const name of names) {
-    const value = params.get(name);
+  const allowedNames = names.map((name) => name.toLowerCase());
 
-    if (value) return value.trim();
+  for (const [key, value] of params.entries()) {
+    if (allowedNames.includes(key.toLowerCase())) {
+      return value?.trim() || "";
+    }
   }
 
   return "";
@@ -200,6 +202,7 @@ export const importExpenseFromDgii = async (req, res) => {
       "RNCEmisor",
       "rncEmisor",
       "rnc_emisor",
+      "rncemisor",
     ]);
 
     const urlNcf = getUrlParam(params, [
@@ -214,6 +217,7 @@ export const importExpenseFromDgii = async (req, res) => {
     const urlDate = getUrlParam(params, [
       "FechaEmision",
       "fechaEmision",
+      "fechaemision",
       "Fecha",
       "fecha",
     ]);
@@ -221,6 +225,7 @@ export const importExpenseFromDgii = async (req, res) => {
     const urlTotal = getUrlParam(params, [
       "MontoTotal",
       "montoTotal",
+      "montototal",
       "Total",
       "total",
     ]);
@@ -280,7 +285,8 @@ const total =
   parseAmount(urlTotal);
 
 const subtotal = Math.max(total - tax, 0);
-
+  
+if (process.env.NODE_ENV !== "production") {
     console.log("DGII IMPORT DATA:", {
       supplierRnc,
       supplierName,
@@ -290,6 +296,7 @@ const subtotal = Math.max(total - tax, 0);
       total,
       subtotal,
     });
+  }
 
    if (!ncf || !expenseDate || !total) {
     return res.status(400).json({
