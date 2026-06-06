@@ -314,7 +314,7 @@ if (process.env.NODE_ENV !== "production") {
       subtotal: subtotal.toFixed(2),
       category: "Operativo",
       description: "",
-      notes: `Datos importados desde enlace de verificación DGII. Verifique la información antes de guardar.\n${rawUrl}`,
+      notes: "",
     });
   } catch (error) {
     console.log("IMPORT DGII EXPENSE ERROR:", error);
