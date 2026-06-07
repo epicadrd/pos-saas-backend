@@ -33,6 +33,7 @@ import { requestIdMiddleware } from "./middlewares/requestIdMiddleware.js";
 import { accessLogMiddleware } from "./middlewares/accessLogMiddleware.js";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 import inventoryCountRoutes from "./routes/inventoryCountRoutes.js";
+import catalogRoutes from "./routes/catalogRoutes.js";
 
 dotenv.config();
 
@@ -153,6 +154,7 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/accounts-receivable", accountsReceivableRoutes);
 app.use("/api/accounts-payable", accountsPayableRoutes);
 app.use("/api/account-settings", accountSettingsRoutes);
+app.use("/api/catalog", catalogRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

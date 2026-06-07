@@ -178,4 +178,17 @@ clientAddress: {
   type: DataTypes.TEXT,
   allowNull: true,
 },
+
+catalogToken: {
+  type: DataTypes.STRING,
+  allowNull: true,
+  unique: true,
+},
+
+catalogEnabled: {
+  type: DataTypes.BOOLEAN,
+  allowNull: false,
+  defaultValue: true,
+},
+
 });

@@ -59,6 +59,17 @@ export const Product = sequelize.define("Product", {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
   },
+
+  imageDataUrl: {
+  type: DataTypes.TEXT("long"),
+  allowNull: true,
+  },
+
+  showInCatalog: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true,
+  },
 });
 
 Tenant.hasMany(Product, { foreignKey: "tenantId" });
