@@ -69,7 +69,8 @@ export const getPublicCatalog = async (req, res) => {
         tenantId: tenant.id,
         isActive: true,
         showInCatalog: true,
-      },
+        productType: "product",
+    },
       attributes: ["id", "name", "description", "category", "salePrice", "unit", "imageDataUrl", "productType"],
       order: [["category", "ASC"], ["name", "ASC"]],
     });
