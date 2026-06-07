@@ -16,6 +16,22 @@ const toInteger = (value, fallback = 0) => {
   return Number.isFinite(number) ? number : fallback;
 };
 
+const sanitizeImageDataUrl = (value) => {
+  if (!value) return null;
+
+  const image = String(value).trim();
+
+  if (!image.startsWith("data:image/")) return null;
+
+  const maxLength = 2_500_000;
+
+  if (image.length > maxLength) {
+    throw new Error("La imagen no puede pesar más de 2MB.");
+  }
+
+  return image;
+};
+
 const normalizeProductPayload = (body) => {
   const productType =
     body.productType === "service" ? "service" : "product";
@@ -40,6 +56,8 @@ const normalizeProductPayload = (body) => {
     salePrice: sanitizeNumber(body.salePrice),
     stock: trackStock ? sanitizeInteger(body.stock) : 0,
     minStock: trackStock ? sanitizeInteger(body.minStock) : 0,
+    imageDataUrl: sanitizeImageDataUrl(body.imageDataUrl),
+    showInCatalog: body.showInCatalog === false ? false : true,
   };
 };
 
