@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { Product, Tenant } from "../models/index.js";
 
 const buildCatalogUrl = (token) => {
-  const appUrl = process.env.FRONTEND_URL || process.env.APP_URL || "https://app.corexrd.com";
+  const appUrl = "https://app.corexrd.com";
   return `${appUrl.replace(/\/$/, "")}/catalogo/${token}`;
 };
 
@@ -55,13 +55,26 @@ export const getPublicCatalog = async (req, res) => {
   try {
     const { token } = req.params;
 
+    const cleanToken = String(token || "").trim();
+
     const tenant = await Tenant.findOne({
-      where: { catalogToken: token, catalogEnabled: true },
-      attributes: ["id", "businessName", "phone", "email", "address", "logoDataUrl", "primaryColor"],
+    where: {
+        catalogToken: cleanToken,
+    },
+    attributes: [
+        "id",
+        "businessName",
+        "phone",
+        "email",
+        "address",
+        "logoDataUrl",
+        "primaryColor",
+        "catalogEnabled",
+    ],
     });
 
-    if (!tenant) {
-      return res.status(404).json({ message: "Catálogo no disponible" });
+    if (!tenant || tenant.catalogEnabled === false || tenant.catalogEnabled === 0) {
+    return res.status(404).json({ message: "Catálogo no disponible" });
     }
 
     const products = await Product.findAll({
