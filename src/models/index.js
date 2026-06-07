@@ -20,6 +20,10 @@ import { SecurityLog } from "./SecurityLog.js";
 import { AccessLog } from "./AccessLog.js";
 import { InventoryCount } from "./InventoryCount.js";
 import { InventoryCountItem } from "./InventoryCountItem.js";
+import { CashRegister } from "./CashRegister.js";
+import { CashSession } from "./CashSession.js";
+import { PosSale } from "./PosSale.js";
+import { PosSaleItem } from "./PosSaleItem.js";
 
 Invoice.belongsTo(User, {
   foreignKey: "createdBy",
@@ -99,6 +103,20 @@ Supplier.hasMany(Expense, {
   as: "expenses",
 });
 
+CashRegister.belongsTo(User, { foreignKey: "createdBy", as: "creator" });
+CashRegister.hasMany(CashSession, { foreignKey: "cashRegisterId", as: "sessions" });
+
+CashSession.belongsTo(CashRegister, { foreignKey: "cashRegisterId", as: "cashRegister" });
+CashSession.belongsTo(User, { foreignKey: "userId", as: "user" });
+
+PosSale.belongsTo(CashRegister, { foreignKey: "cashRegisterId", as: "cashRegister" });
+PosSale.belongsTo(CashSession, { foreignKey: "cashSessionId", as: "cashSession" });
+PosSale.belongsTo(User, { foreignKey: "userId", as: "user" });
+PosSale.hasMany(PosSaleItem, { foreignKey: "posSaleId", as: "items" });
+
+PosSaleItem.belongsTo(PosSale, { foreignKey: "posSaleId", as: "sale" });
+PosSaleItem.belongsTo(Product, { foreignKey: "productId", as: "product" });
+
 export {
   sequelize,
   Tenant,
@@ -122,4 +140,8 @@ export {
   AccessLog,
   InventoryCount,
   InventoryCountItem,
+  CashRegister,
+  CashSession,
+  PosSale,
+  PosSaleItem,
 };
