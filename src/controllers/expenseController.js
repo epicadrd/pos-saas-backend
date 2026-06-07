@@ -118,6 +118,38 @@ const normalizeAmounts = ({ subtotal, tax, total }) => {
   };
 };
 
+const validateUniqueNcf = async ({ tenantId, ncf, excludeId = null }) => {
+  const cleanNcf = sanitizeString(ncf, 30)?.trim()?.toUpperCase();
+
+  if (!cleanNcf) return;
+
+  const where = {
+    tenantId,
+    ncf: cleanNcf,
+  };
+
+  if (excludeId) {
+    where.id = { [Op.ne]: excludeId };
+  }
+
+  const existingExpense = await Expense.findOne({ where });
+
+  if (existingExpense) {
+    const error = new Error(
+      `Este e-NCF ya existe en el gasto ${existingExpense.expenseNumber}.`
+    );
+
+    error.status = 409;
+    error.details = {
+      expenseId: existingExpense.id,
+      expenseNumber: existingExpense.expenseNumber,
+      ncf: cleanNcf,
+    };
+
+    throw error;
+  }
+};
+
 export const getExpenses = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
@@ -366,6 +398,11 @@ export const createExpense = async (req, res) => {
       });
     }
 
+    await validateUniqueNcf({
+      tenantId,
+      ncf,
+    });
+
     await validateSupplierTenant(supplierId, tenantId);
 
     const expense = await Expense.create({
@@ -401,8 +438,9 @@ export const createExpense = async (req, res) => {
   } catch (error) {
     console.log("CREATE EXPENSE ERROR:", error);
 
-    res.status(500).json({
-      message: "Error creando gasto",
+    res.status(error.status || 500).json({
+      message: error.message || "Error creando gasto",
+      details: error.details || null,
     });
   }
 };
@@ -446,6 +484,12 @@ export const updateExpense = async (req, res) => {
       });
     }
 
+    await validateUniqueNcf({
+      tenantId,
+      ncf: payload.ncf,
+      excludeId: expense.id,
+    });
+
     if (
       req.body.subtotal !== undefined ||
       req.body.tax !== undefined ||
@@ -482,9 +526,10 @@ export const updateExpense = async (req, res) => {
   } catch (error) {
     console.log("UPDATE EXPENSE ERROR:", error);
 
-    res.status(500).json({
-      message: "Error actualizando gasto",
-    });
+   res.status(error.status || 500).json({
+      message: error.message || "Error actualizando gasto",
+      details: error.details || null,
+   });
   }
 };
 
