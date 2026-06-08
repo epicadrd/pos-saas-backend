@@ -14,7 +14,7 @@ import { requireActiveSubscription } from "../middlewares/subscriptionMiddleware
 
 const router = express.Router();
 
-router.get("/", protect, requireActiveSubscription, requireRole("master", "admin"), getProducts);
+router.get("/", protect, requireActiveSubscription, requireRole("master", "admin", "employee"), getProducts);
 router.get("/:id/movements", protect, requireActiveSubscription, requireRole("master", "admin"), getProductMovements);
 
 router.post("/", protect, requireActiveSubscription, requireRole("master", "admin"), createProduct);
