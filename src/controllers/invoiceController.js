@@ -70,6 +70,8 @@ const generateInvoiceNumber = (tenant) => {
   return `${prefix}-${String(nextNumber).padStart(digits, "0")}`;
 };
 
+const roundMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
 const validateAndNormalizeItems = async ({
   items,
   tenantId,
@@ -83,11 +85,12 @@ const validateAndNormalizeItems = async ({
     const productId = item.productId || item.id;
     const quantity = sanitizeInteger(item.quantity);
     const price = sanitizeNumber(item.price ?? item.unitPrice);
-    const discount = sanitizeNumber(item.discount);
+    const discountAmount = sanitizeNumber(item.discount);
 
     if (!productId) throw new Error("Producto inválido en factura");
     if (quantity <= 0) throw new Error("La cantidad debe ser mayor a cero");
     if (price < 0) throw new Error("El precio no puede ser negativo");
+    if (discountAmount < 0) throw new Error("El descuento no puede ser negativo");
 
     const product = await Product.findOne({
       where: { id: productId, tenantId, isActive: true },
@@ -110,34 +113,35 @@ const validateAndNormalizeItems = async ({
       );
     }
 
-      const grossSubtotal = quantity * price;
-      const discountPercent = Math.min(Math.max(discount, 0), 100);
-      const discountAmount = grossSubtotal * (discountPercent / 100);
-      const lineSubtotal = Math.max(grossSubtotal - discountAmount, 0);
+    const grossSubtotal = roundMoney(quantity * price);
+    const safeDiscount = Math.min(discountAmount, grossSubtotal);
+    const lineSubtotal = roundMoney(grossSubtotal - safeDiscount);
 
-      const taxEnabled = taxConfig.invoiceTaxEnabled !== false;
-      const taxMode = taxConfig.invoiceTaxMode || "global";
-      const defaultTaxRate = sanitizeNumber(taxConfig.invoiceTaxRate, 18);
+    const taxEnabled = taxConfig.invoiceTaxEnabled !== false;
+    const taxMode = taxConfig.invoiceTaxMode || "global";
+    const defaultTaxRate = sanitizeNumber(taxConfig.invoiceTaxRate, 18);
 
-      const isTaxable =
-        taxEnabled &&
-        (taxMode === "global" ? true : item.isTaxable !== false);
+    const isTaxable =
+      taxEnabled &&
+      (taxMode === "global" ? true : item.isTaxable !== false);
 
-      const taxRate = isTaxable ? defaultTaxRate : 0;
-      const lineTax = lineSubtotal * (taxRate / 100);
-      const lineTotal = lineSubtotal + lineTax;
+    const taxRate = isTaxable ? defaultTaxRate : 0;
+    const lineTax = roundMoney(lineSubtotal * (taxRate / 100));
+    const lineTotal = roundMoney(lineSubtotal + lineTax);
 
     normalizedItems.push({
       product,
       productId: product.id,
       productName: product.name,
-      description:sanitizeString(item.description || product.description || "",1000) || null,
+      description:
+        sanitizeString(item.description || product.description || "", 1000) ||
+        null,
       quantity,
-      unitPrice: price,
-      discount: discountPercent,
+      unitPrice: roundMoney(price),
+      discount: roundMoney(safeDiscount),
+      subtotal: lineSubtotal,
       tax: lineTax,
       total: lineTotal,
-      subtotal: lineSubtotal,
       isTaxable,
       taxRate,
     });
@@ -145,7 +149,6 @@ const validateAndNormalizeItems = async ({
 
   return normalizedItems;
 };
-
 const saveInvoiceItems = async ({ invoice, items, tenantId, transaction }) => {
   await InvoiceItem.destroy({
     where: { invoiceId: invoice.id, tenantId },
@@ -318,9 +321,9 @@ export const createInvoice = async (req, res) => {
       taxConfig: tenant,
     });
 
-    const subtotal = normalizedItems.reduce((acc, i) => acc + i.subtotal, 0);
-const tax = normalizedItems.reduce((acc, i) => acc + i.tax, 0);
-const total = normalizedItems.reduce((acc, i) => acc + i.total, 0);
+    const subtotal = roundMoney(normalizedItems.reduce((acc, i) => acc + Number(i.subtotal || 0), 0));
+    const tax = roundMoney(normalizedItems.reduce((acc, i) => acc + Number(i.tax || 0), 0));
+    const total = roundMoney(subtotal + tax);
     const paid = isDraft ? 0 : sanitizeNumber(amountPaid);
 
     if (paid < 0) throw new Error("El monto pagado no puede ser negativo");
@@ -464,20 +467,9 @@ export const updateDraftInvoice = async (req, res) => {
       taxConfig: tenant,
     });
 
-    const subtotal = normalizedItems.reduce(
-      (acc, item) => acc + Number(item.subtotal || 0),
-      0
-    );
-
-    const tax = normalizedItems.reduce(
-      (acc, item) => acc + Number(item.tax || 0),
-      0
-    );
-
-    const total = normalizedItems.reduce(
-      (acc, item) => acc + Number(item.total || 0),
-      0
-    );
+    const subtotal = roundMoney(normalizedItems.reduce((acc, item) => acc + Number(item.subtotal || 0), 0));
+    const tax = roundMoney(normalizedItems.reduce((acc, item) => acc + Number(item.tax || 0), 0));
+    const total = roundMoney(subtotal + tax);
 
     await invoice.update(
       {
