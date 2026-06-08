@@ -15,6 +15,7 @@ import { sanitizeString, sanitizeNumber, sanitizeInteger } from "../utils/saniti
 
 const generateCode = (id) => `CAJA-${String(id).padStart(3, "0")}`;
 const generateSaleNumber = (id) => `POS-${String(id).padStart(8, "0")}`;
+const roundMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const calculateSessionSummary = async (tenantId, cashSessionId) => {
   const sales = await PosSale.findAll({
     where: {
@@ -343,6 +344,22 @@ export const createPosSale = async (req, res) => {
       return res.status(400).json({ message: "No tienes una caja abierta" });
     }
 
+    const tenant = await Tenant.findByPk(tenantId, {
+    attributes: [
+      "businessName",
+      "rnc",
+      "phone",
+      "email",
+      "address",
+      "invoiceTaxEnabled",
+      "invoiceTaxRate",
+    ],
+    transaction,
+  });
+
+  const taxEnabled = tenant?.invoiceTaxEnabled !== false;
+  const taxRate = Number(tenant?.invoiceTaxRate || 18);
+
     let subtotal = 0;
     let lineDiscountTotal = 0;
     const saleItems = [];
@@ -399,9 +416,12 @@ export const createPosSale = async (req, res) => {
 
     const maxOrderDiscount = Math.max(subtotal - lineDiscountTotal, 0);
     const safeOrderDiscount = Math.min(orderDiscount, maxOrderDiscount);
-    const discountTotal = lineDiscountTotal + safeOrderDiscount;
-    const total = Math.max(subtotal - discountTotal, 0);
-    const changeAmount = Math.max(amountPaid - total, 0);
+    const discountTotal = roundMoney(lineDiscountTotal + safeOrderDiscount);
+
+    const taxableSubtotal = roundMoney(Math.max(subtotal - discountTotal, 0));
+    const taxTotal = taxEnabled ? roundMoney(taxableSubtotal * (taxRate / 100)) : 0;
+    const total = roundMoney(taxableSubtotal + taxTotal);
+    const changeAmount = roundMoney(Math.max(amountPaid - total, 0));
 
     if (amountPaid < total && paymentMethod === "cash") {
       await transaction.rollback();
@@ -417,7 +437,7 @@ export const createPosSale = async (req, res) => {
         saleNumber: "TEMP",
         subtotal,
         discountTotal,
-        taxTotal: 0,
+        taxTotal,
         total,
         paymentMethod,
         amountPaid,
@@ -509,7 +529,7 @@ export const createPosSale = async (req, res) => {
       ],
     });
 
-    const tenant = await Tenant.findByPk(tenantId, {
+    const tenantReceipt = await Tenant.findByPk(tenantId, {
       attributes: ["businessName", "rnc", "phone", "email", "address"],
     });
 
@@ -517,7 +537,7 @@ export const createPosSale = async (req, res) => {
       message: "Venta registrada correctamente",
       sale: {
         ...saleDetail.toJSON(),
-        tenant,
+        tenant: tenantReceipt,
       },
     });
   } catch (error) {
@@ -657,11 +677,11 @@ export const getPosSaleDetail = async (req, res) => {
     if (!sale) {
       return res.status(404).json({ message: "Venta no encontrada" });
     }
-   
+
     const tenant = await Tenant.findByPk(tenantId, {
       attributes: ["businessName", "rnc", "phone", "email", "address"],
     });
-
+   
     return res.json({
       ...sale.toJSON(),
       tenant,
