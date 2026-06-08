@@ -7,6 +7,7 @@ import {
   PosSaleItem,
   Product,
   StockMovement,
+  User,
 } from "../models/index.js";
 import { sanitizeString, sanitizeNumber, sanitizeInteger } from "../utils/sanitize.js";
 
@@ -189,15 +190,32 @@ export const closeCashSession = async (req, res) => {
       return res.status(404).json({ message: "Sesión de caja no encontrada" });
     }
 
-    const totalSales = Number(session.totalSales || 0);
+    const cashSales = await PosSale.sum("total", {
+      where: {
+        tenantId,
+        cashSessionId: session.id,
+        paymentMethod: "cash",
+        status: "paid",
+      },
+    });
+
+    const totalSales = await PosSale.sum("total", {
+      where: {
+        tenantId,
+        cashSessionId: session.id,
+        status: "paid",
+      },
+    });
+
     const openingAmount = Number(session.openingAmount || 0);
-    const expectedAmount = openingAmount + totalSales;
+    const expectedAmount = openingAmount + Number(cashSales || 0);
     const difference = closingAmount - expectedAmount;
 
     await session.update({
       closingAmount,
       expectedAmount,
       difference,
+      totalSales: Number(totalSales || 0),
       status: "closed",
       closedAt: new Date(),
     });
@@ -205,6 +223,14 @@ export const closeCashSession = async (req, res) => {
     return res.json({
       message: "Caja cerrada correctamente",
       session,
+      summary: {
+        openingAmount,
+        cashSales: Number(cashSales || 0),
+        totalSales: Number(totalSales || 0),
+        expectedAmount,
+        closingAmount,
+        difference,
+      },
     });
   } catch (error) {
     console.log("CLOSE CASH SESSION ERROR:", error);
@@ -391,16 +417,138 @@ export const createPosSale = async (req, res) => {
 
 export const getPosSales = async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
+
+    const where = {
+      tenantId,
+      status: "paid",
+    };
+
+    const cashRegisterId = sanitizeInteger(req.query.cashRegisterId);
+    const paymentMethod = sanitizeString(req.query.paymentMethod, 20);
+    const dateFrom = sanitizeString(req.query.dateFrom, 20);
+    const dateTo = sanitizeString(req.query.dateTo, 20);
+
+    if (cashRegisterId) {
+      where.cashRegisterId = cashRegisterId;
+    }
+
+    if (paymentMethod && paymentMethod !== "all") {
+      where.paymentMethod = paymentMethod;
+    }
+
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+
+      if (dateFrom) {
+        where.createdAt[Op.gte] = new Date(`${dateFrom}T00:00:00`);
+      }
+
+      if (dateTo) {
+        where.createdAt[Op.lte] = new Date(`${dateTo}T23:59:59`);
+      }
+    }
+
     const sales = await PosSale.findAll({
-      where: { tenantId: req.user.tenantId },
-      include: [{ model: PosSaleItem, as: "items" }],
+      where,
+      include: [
+        {
+          model: PosSaleItem,
+          as: "items",
+        },
+        {
+          model: CashRegister,
+          as: "cashRegister",
+          attributes: ["id", "name", "code"],
+        },
+        {
+          model: User,
+          as: "user",
+          attributes: ["id", "name", "email"],
+        },
+      ],
       order: [["createdAt", "DESC"]],
-      limit: 100,
+      limit: 300,
     });
 
-    return res.json(sales);
+    const summary = sales.reduce(
+      (acc, sale) => {
+        const total = Number(sale.total || 0);
+        const method = sale.paymentMethod || "cash";
+
+        acc.salesCount += 1;
+        acc.total += total;
+
+        if (!acc.byPaymentMethod[method]) {
+          acc.byPaymentMethod[method] = 0;
+        }
+
+        acc.byPaymentMethod[method] += total;
+
+        return acc;
+      },
+      {
+        salesCount: 0,
+        total: 0,
+        byPaymentMethod: {
+          cash: 0,
+          card: 0,
+          transfer: 0,
+          check: 0,
+          mixed: 0,
+        },
+      }
+    );
+
+    return res.json({
+      sales,
+      summary,
+    });
   } catch (error) {
     console.log("GET POS SALES ERROR:", error);
     return res.status(500).json({ message: "Error obteniendo ventas POS" });
+  }
+};
+
+export const getPosSaleDetail = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const { id } = req.params;
+
+    const sale = await PosSale.findOne({
+      where: {
+        id,
+        tenantId,
+      },
+      include: [
+        {
+          model: PosSaleItem,
+          as: "items",
+        },
+        {
+          model: CashRegister,
+          as: "cashRegister",
+          attributes: ["id", "name", "code"],
+        },
+        {
+          model: CashSession,
+          as: "cashSession",
+        },
+        {
+          model: User,
+          as: "user",
+          attributes: ["id", "name", "email"],
+        },
+      ],
+    });
+
+    if (!sale) {
+      return res.status(404).json({ message: "Venta no encontrada" });
+    }
+
+    return res.json(sale);
+  } catch (error) {
+    console.log("GET POS SALE DETAIL ERROR:", error);
+    return res.status(500).json({ message: "Error obteniendo detalle de venta" });
   }
 };
