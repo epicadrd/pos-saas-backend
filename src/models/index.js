@@ -24,6 +24,7 @@ import { CashRegister } from "./CashRegister.js";
 import { CashSession } from "./CashSession.js";
 import { PosSale } from "./PosSale.js";
 import { PosSaleItem } from "./PosSaleItem.js";
+import { CashRegisterUser } from "./CashRegisterUser.js";
 
 Invoice.belongsTo(User, {
   foreignKey: "createdBy",
@@ -109,6 +110,20 @@ CashRegister.hasMany(CashSession, { foreignKey: "cashRegisterId", as: "sessions"
 CashSession.belongsTo(CashRegister, { foreignKey: "cashRegisterId", as: "cashRegister" });
 CashSession.belongsTo(User, { foreignKey: "userId", as: "user" });
 
+CashRegister.belongsToMany(User, {
+  through: CashRegisterUser,
+  foreignKey: "cashRegisterId",
+  otherKey: "userId",
+  as: "assignedUsers",
+});
+
+User.belongsToMany(CashRegister, {
+  through: CashRegisterUser,
+  foreignKey: "userId",
+  otherKey: "cashRegisterId",
+  as: "assignedCashRegisters",
+});
+
 PosSale.belongsTo(CashRegister, { foreignKey: "cashRegisterId", as: "cashRegister" });
 PosSale.belongsTo(CashSession, { foreignKey: "cashSessionId", as: "cashSession" });
 PosSale.belongsTo(User, { foreignKey: "userId", as: "user" });
@@ -144,4 +159,5 @@ export {
   CashSession,
   PosSale,
   PosSaleItem,
+  CashRegisterUser,
 };

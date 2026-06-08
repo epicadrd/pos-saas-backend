@@ -9,6 +9,9 @@ import {
   openCashSession,
   updateCashRegister,
   getPosSaleDetail,
+  getCashSessionSummary,
+  getPosUsers,
+  updateCashRegisterUsers,
 } from "../controllers/posController.js";
 import { protect, requireRole } from "../middlewares/authMiddleware.js";
 import { requireActiveSubscription } from "../middlewares/subscriptionMiddleware.js";
@@ -29,5 +32,9 @@ router.post("/sessions/:id/close", requireRole("master", "admin", "employee"), c
 router.get("/sales", requireRole("master", "admin"), getPosSales);
 router.get("/sales/:id", requireRole("master", "admin"), getPosSaleDetail);
 router.post("/sales", requireRole("master", "admin", "employee"), createPosSale);
+
+router.get("/users", requireRole("master"), getPosUsers);
+router.put("/cash-registers/:id/users", requireRole("master"), updateCashRegisterUsers);
+router.get("/sessions/:id/summary", requireRole("master", "admin", "employee"), getCashSessionSummary);
 
 export default router;

@@ -2,6 +2,7 @@ import { Op } from "sequelize";
 import {
   sequelize,
   CashRegister,
+  CashRegisterUser,
   CashSession,
   PosSale,
   PosSaleItem,
@@ -13,11 +14,74 @@ import { sanitizeString, sanitizeNumber, sanitizeInteger } from "../utils/saniti
 
 const generateCode = (id) => `CAJA-${String(id).padStart(3, "0")}`;
 const generateSaleNumber = (id) => `POS-${String(id).padStart(8, "0")}`;
+const calculateSessionSummary = async (tenantId, cashSessionId) => {
+  const sales = await PosSale.findAll({
+    where: {
+      tenantId,
+      cashSessionId,
+      status: "paid",
+    },
+  });
+
+  return sales.reduce(
+    (acc, sale) => {
+      const total = Number(sale.total || 0);
+      const method = sale.paymentMethod || "cash";
+
+      acc.totalSales += total;
+      acc.salesCount += 1;
+
+      if (!acc.byPaymentMethod[method]) {
+        acc.byPaymentMethod[method] = 0;
+      }
+
+      acc.byPaymentMethod[method] += total;
+
+      return acc;
+    },
+    {
+      salesCount: 0,
+      totalSales: 0,
+      byPaymentMethod: {
+        cash: 0,
+        card: 0,
+        transfer: 0,
+        check: 0,
+        mixed: 0,
+      },
+    }
+  );
+};
 
 export const getCashRegisters = async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
+
+    const where = { tenantId };
+
+    if (req.user.role !== "master") {
+      const assignments = await CashRegisterUser.findAll({
+        where: {
+          tenantId,
+          userId: req.user.id,
+        },
+      });
+
+      const assignedIds = assignments.map((item) => item.cashRegisterId);
+
+      where.id = assignedIds.length ? assignedIds : 0;
+    }
+
     const registers = await CashRegister.findAll({
-      where: { tenantId: req.user.tenantId },
+      where,
+      include: [
+        {
+          model: User,
+          as: "assignedUsers",
+          attributes: ["id", "name", "email", "role"],
+          through: { attributes: [] },
+        },
+      ],
       order: [["createdAt", "DESC"]],
     });
 
@@ -27,7 +91,6 @@ export const getCashRegisters = async (req, res) => {
     return res.status(500).json({ message: "Error obteniendo cajas" });
   }
 };
-
 export const createCashRegister = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
@@ -124,6 +187,22 @@ export const openCashSession = async (req, res) => {
       return res.status(404).json({ message: "Caja no encontrada o inactiva" });
     }
 
+    if (req.user.role !== "master") {
+      const assignment = await CashRegisterUser.findOne({
+        where: {
+          tenantId,
+          cashRegisterId,
+          userId,
+        },
+      });
+
+      if (!assignment) {
+        return res.status(403).json({
+          message: "No tienes permiso para abrir esta caja",
+        });
+      }
+    }
+
     const existingOpenSession = await CashSession.findOne({
       where: {
         tenantId,
@@ -190,32 +269,18 @@ export const closeCashSession = async (req, res) => {
       return res.status(404).json({ message: "Sesión de caja no encontrada" });
     }
 
-    const cashSales = await PosSale.sum("total", {
-      where: {
-        tenantId,
-        cashSessionId: session.id,
-        paymentMethod: "cash",
-        status: "paid",
-      },
-    });
-
-    const totalSales = await PosSale.sum("total", {
-      where: {
-        tenantId,
-        cashSessionId: session.id,
-        status: "paid",
-      },
-    });
+    const salesSummary = await calculateSessionSummary(tenantId, session.id);
 
     const openingAmount = Number(session.openingAmount || 0);
-    const expectedAmount = openingAmount + Number(cashSales || 0);
+    const cashSales = Number(salesSummary.byPaymentMethod.cash || 0);
+    const expectedAmount = openingAmount + cashSales;
     const difference = closingAmount - expectedAmount;
 
     await session.update({
       closingAmount,
       expectedAmount,
       difference,
-      totalSales: Number(totalSales || 0),
+      totalSales: Number(salesSummary.totalSales || 0),
       status: "closed",
       closedAt: new Date(),
     });
@@ -225,8 +290,13 @@ export const closeCashSession = async (req, res) => {
       session,
       summary: {
         openingAmount,
-        cashSales: Number(cashSales || 0),
-        totalSales: Number(totalSales || 0),
+        salesCount: salesSummary.salesCount,
+        totalSales: salesSummary.totalSales,
+        cashSales,
+        cardSales: salesSummary.byPaymentMethod.card || 0,
+        transferSales: salesSummary.byPaymentMethod.transfer || 0,
+        checkSales: salesSummary.byPaymentMethod.check || 0,
+        mixedSales: salesSummary.byPaymentMethod.mixed || 0,
         expectedAmount,
         closingAmount,
         difference,
@@ -248,6 +318,7 @@ export const createPosSale = async (req, res) => {
     const cashSessionId = sanitizeInteger(req.body.cashSessionId);
     const paymentMethod = sanitizeString(req.body.paymentMethod || "cash", 20);
     const amountPaid = sanitizeNumber(req.body.amountPaid);
+    const orderDiscount = sanitizeNumber(req.body.discountTotal);
     const items = Array.isArray(req.body.items) ? req.body.items : [];
 
     if (!items.length) {
@@ -272,11 +343,13 @@ export const createPosSale = async (req, res) => {
     }
 
     let subtotal = 0;
+    let lineDiscountTotal = 0;
     const saleItems = [];
 
     for (const item of items) {
       const productId = sanitizeInteger(item.productId);
       const quantity = sanitizeInteger(item.quantity);
+      const rawDiscount = sanitizeNumber(item.discountAmount);
 
       if (!productId || quantity <= 0) {
         await transaction.rollback();
@@ -307,18 +380,26 @@ export const createPosSale = async (req, res) => {
       }
 
       const unitPrice = Number(product.salePrice || 0);
-      const total = unitPrice * quantity;
-      subtotal += total;
+      const lineSubtotal = unitPrice * quantity;
+      const discountAmount = Math.min(rawDiscount, lineSubtotal);
+      const lineTotal = Math.max(lineSubtotal - discountAmount, 0);
+
+      subtotal += lineSubtotal;
+      lineDiscountTotal += discountAmount;
 
       saleItems.push({
         product,
         quantity,
         unitPrice,
-        total,
+        discountAmount,
+        total: lineTotal,
       });
     }
 
-    const total = subtotal;
+    const maxOrderDiscount = Math.max(subtotal - lineDiscountTotal, 0);
+    const safeOrderDiscount = Math.min(orderDiscount, maxOrderDiscount);
+    const discountTotal = lineDiscountTotal + safeOrderDiscount;
+    const total = Math.max(subtotal - discountTotal, 0);
     const changeAmount = Math.max(amountPaid - total, 0);
 
     if (amountPaid < total && paymentMethod === "cash") {
@@ -334,7 +415,7 @@ export const createPosSale = async (req, res) => {
         userId,
         saleNumber: "TEMP",
         subtotal,
-        discountTotal: 0,
+        discountTotal,
         taxTotal: 0,
         total,
         paymentMethod,
@@ -361,7 +442,7 @@ export const createPosSale = async (req, res) => {
           productName: item.product.name,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          discountAmount: 0,
+          discountAmount: item.discountAmount,
           total: item.total,
         },
         { transaction }
@@ -371,10 +452,7 @@ export const createPosSale = async (req, res) => {
         const previousStock = Number(item.product.stock || 0);
         const newStock = previousStock - item.quantity;
 
-        await item.product.update(
-          { stock: newStock },
-          { transaction }
-        );
+        await item.product.update({ stock: newStock }, { transaction });
 
         await StockMovement.create(
           {
@@ -550,5 +628,119 @@ export const getPosSaleDetail = async (req, res) => {
   } catch (error) {
     console.log("GET POS SALE DETAIL ERROR:", error);
     return res.status(500).json({ message: "Error obteniendo detalle de venta" });
+  }
+};
+
+export const getPosUsers = async (req, res) => {
+  try {
+    const users = await User.findAll({
+      where: {
+        tenantId: req.user.tenantId,
+        isActive: true,
+      },
+      attributes: ["id", "name", "email", "role"],
+      order: [["name", "ASC"]],
+    });
+
+    return res.json(users);
+  } catch (error) {
+    console.log("GET POS USERS ERROR:", error);
+    return res.status(500).json({ message: "Error obteniendo usuarios" });
+  }
+};
+
+export const updateCashRegisterUsers = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const cashRegisterId = sanitizeInteger(req.params.id);
+    const userIds = Array.isArray(req.body.userIds)
+      ? req.body.userIds.map((id) => sanitizeInteger(id)).filter(Boolean)
+      : [];
+
+    const register = await CashRegister.findOne({
+      where: {
+        id: cashRegisterId,
+        tenantId,
+      },
+    });
+
+    if (!register) {
+      return res.status(404).json({ message: "Caja no encontrada" });
+    }
+
+    await CashRegisterUser.destroy({
+      where: {
+        tenantId,
+        cashRegisterId,
+      },
+    });
+
+    if (userIds.length) {
+      const validUsers = await User.findAll({
+        where: {
+          id: userIds,
+          tenantId,
+          isActive: true,
+        },
+        attributes: ["id"],
+      });
+
+      await CashRegisterUser.bulkCreate(
+        validUsers.map((user) => ({
+          tenantId,
+          cashRegisterId,
+          userId: user.id,
+        }))
+      );
+    }
+
+    return res.json({ message: "Usuarios asignados correctamente" });
+  } catch (error) {
+    console.log("UPDATE CASH REGISTER USERS ERROR:", error);
+    return res.status(500).json({ message: "Error asignando usuarios a la caja" });
+  }
+};
+
+export const getCashSessionSummary = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const userId = req.user.id;
+    const sessionId = sanitizeInteger(req.params.id);
+
+    const session = await CashSession.findOne({
+      where: {
+        id: sessionId,
+        tenantId,
+        userId,
+      },
+      include: [{ model: CashRegister, as: "cashRegister" }],
+    });
+
+    if (!session) {
+      return res.status(404).json({ message: "Sesión de caja no encontrada" });
+    }
+
+    const salesSummary = await calculateSessionSummary(tenantId, session.id);
+    const openingAmount = Number(session.openingAmount || 0);
+    const cashSales = Number(salesSummary.byPaymentMethod.cash || 0);
+    const expectedAmount = openingAmount + cashSales;
+
+    return res.json({
+      session,
+      summary: {
+        openingAmount,
+        salesCount: salesSummary.salesCount,
+        totalSales: salesSummary.totalSales,
+        cashSales,
+        cardSales: salesSummary.byPaymentMethod.card || 0,
+        transferSales: salesSummary.byPaymentMethod.transfer || 0,
+        checkSales: salesSummary.byPaymentMethod.check || 0,
+        mixedSales: salesSummary.byPaymentMethod.mixed || 0,
+        expectedAmount,
+      },
+    });
+  } catch (error) {
+    console.log("GET CASH SESSION SUMMARY ERROR:", error);
+    return res.status(500).json({ message: "Error obteniendo resumen de caja" });
   }
 };
