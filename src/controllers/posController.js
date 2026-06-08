@@ -9,6 +9,7 @@ import {
   Product,
   StockMovement,
   User,
+  Tenant,
 } from "../models/index.js";
 import { sanitizeString, sanitizeNumber, sanitizeInteger } from "../utils/sanitize.js";
 
@@ -480,11 +481,44 @@ export const createPosSale = async (req, res) => {
       { transaction }
     );
 
-    await transaction.commit();
+   await transaction.commit();
+    const saleDetail = await PosSale.findOne({
+      where: {
+        id: sale.id,
+        tenantId,
+      },
+      include: [
+        {
+          model: PosSaleItem,
+          as: "items",
+        },
+        {
+          model: CashRegister,
+          as: "cashRegister",
+          attributes: ["id", "name", "code"],
+        },
+        {
+          model: CashSession,
+          as: "cashSession",
+        },
+        {
+          model: User,
+          as: "user",
+          attributes: ["id", "name", "email"],
+        },
+      ],
+    });
+
+    const tenant = await Tenant.findByPk(tenantId, {
+      attributes: ["businessName", "rnc", "phone", "email", "address"],
+    });
 
     return res.status(201).json({
       message: "Venta registrada correctamente",
-      sale,
+      sale: {
+        ...saleDetail.toJSON(),
+        tenant,
+      },
     });
   } catch (error) {
     await transaction.rollback();
@@ -623,8 +657,15 @@ export const getPosSaleDetail = async (req, res) => {
     if (!sale) {
       return res.status(404).json({ message: "Venta no encontrada" });
     }
+   
+    const tenant = await Tenant.findByPk(tenantId, {
+      attributes: ["businessName", "rnc", "phone", "email", "address"],
+    });
 
-    return res.json(sale);
+    return res.json({
+      ...sale.toJSON(),
+      tenant,
+    });
   } catch (error) {
     console.log("GET POS SALE DETAIL ERROR:", error);
     return res.status(500).json({ message: "Error obteniendo detalle de venta" });
