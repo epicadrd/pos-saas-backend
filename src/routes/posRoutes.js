@@ -21,7 +21,11 @@ const router = express.Router();
 router.use(protect);
 router.use(requireActiveSubscription);
 
-router.get("/cash-registers", requireRole("master", "admin"), getCashRegisters);
+router.get(
+  "/cash-registers",
+  requireRole("master", "admin", "employee"),
+  getCashRegisters
+);
 router.post("/cash-registers", requireRole("master"), createCashRegister);
 router.put("/cash-registers/:id", requireRole("master"), updateCashRegister);
 
