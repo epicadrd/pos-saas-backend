@@ -291,6 +291,13 @@ export const createInvoice = async (req, res) => {
     const terms = sanitizeString(req.body.terms, 2000) || null;
     const notes = sanitizeString(req.body.notes, 3000) || null;
 
+    const invoiceType = sanitizeString(req.body.invoiceType, 30) || "consumer_final";
+    const validInvoiceTypes = ["consumer_final", "credit_fiscal"];
+
+    if (!validInvoiceTypes.includes(invoiceType)) {
+      throw new Error("Tipo de factura inválido");
+    }
+
     if (!customerName?.trim()) {
       throw new Error("El cliente es obligatorio");
     }
@@ -341,6 +348,7 @@ export const createInvoice = async (req, res) => {
       {
         tenantId,
         invoiceNumber: generateInvoiceNumber(tenant),
+        invoiceType,
         customerName: customerName.trim(),
         customerRnc,
         customerPhone,
@@ -443,6 +451,13 @@ export const updateDraftInvoice = async (req, res) => {
     const dueDate = sanitizeString(req.body.dueDate, 20) || null;
     const terms = sanitizeString(req.body.terms, 2000) || null;
     const notes = sanitizeString(req.body.notes, 3000) || null;
+    const invoiceType = sanitizeString(req.body.invoiceType, 30) || "consumer_final";
+
+    const validInvoiceTypes = ["consumer_final", "credit_fiscal"];
+
+    if (!validInvoiceTypes.includes(invoiceType)) {
+      throw new Error("Tipo de factura inválido");
+    }
     const items = Array.isArray(req.body.items) ? req.body.items: [];
 
     if (!customerName?.trim()) {
@@ -477,6 +492,7 @@ export const updateDraftInvoice = async (req, res) => {
         customerRnc,
         customerPhone,
         customerEmail,
+        invoiceType,
         subtotal,
         tax,
         total,

@@ -15,6 +15,17 @@ export const Invoice = sequelize.define("Invoice", {
       allowNull: false,
     },
 
+    invoiceType: {
+      type: DataTypes.ENUM("consumer_final", "credit_fiscal"),
+      allowNull: false,
+      defaultValue: "consumer_final",
+    },
+
+    dgiiQrUrl: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+
     customerName: {
       type: DataTypes.STRING,
       allowNull: false,
