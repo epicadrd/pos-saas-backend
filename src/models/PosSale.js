@@ -19,6 +19,22 @@ export const PosSale = sequelize.define("PosSale", {
     defaultValue: 0,
   },
 
+  receiptType: {
+  type: DataTypes.ENUM("consumer_final", "credit_fiscal"),
+  allowNull: false,
+  defaultValue: "consumer_final",
+  },
+
+  customerRnc: {
+    type: DataTypes.STRING(30),
+    allowNull: true,
+  },
+
+  dgiiQrUrl: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
+
   discountTotal: {
     type: DataTypes.DECIMAL(12, 2),
     allowNull: false,

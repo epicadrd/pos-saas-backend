@@ -89,9 +89,16 @@ app.use(
   })
 );
 
-const allowedOrigins = (process.env.APP_URL || "http://localhost:5173")
-  .split(",")
-  .map((url) => url.trim());
+const allowedOrigins = [
+  process.env.APP_URL,
+  process.env.FRONTEND_URL,
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+]
+  .filter(Boolean)
+  .flatMap((value) => value.split(","))
+  .map((url) => url.trim())
+  .filter(Boolean);
 
 logger.info("CORS_ALLOWED_ORIGINS", { allowedOrigins });
 

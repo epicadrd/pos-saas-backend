@@ -321,6 +321,22 @@ export const createPosSale = async (req, res) => {
     const paymentMethod = sanitizeString(req.body.paymentMethod || "cash", 20);
     const amountPaid = sanitizeNumber(req.body.amountPaid);
     const orderDiscount = sanitizeNumber(req.body.discountTotal);
+    const receiptType = sanitizeString(req.body.receiptType, 30) || "consumer_final";
+    const customerRnc = sanitizeString(req.body.customerRnc, 30) || null;
+
+    const validReceiptTypes = ["consumer_final", "credit_fiscal"];
+
+    if (!validReceiptTypes.includes(receiptType)) {
+      await transaction.rollback();
+      return res.status(400).json({ message: "Tipo de factura inválido" });
+    }
+
+    if (receiptType === "credit_fiscal" && !customerRnc) {
+      await transaction.rollback();
+      return res.status(400).json({
+        message: "El RNC del cliente es obligatorio para crédito fiscal",
+      });
+    }
     const items = Array.isArray(req.body.items) ? req.body.items : [];
 
     if (!items.length) {
@@ -436,6 +452,8 @@ export const createPosSale = async (req, res) => {
         userId,
         saleNumber: "TEMP",
         subtotal,
+        receiptType,
+        customerRnc,
         discountTotal,
         taxTotal,
         total,
