@@ -26,6 +26,21 @@ export const Invoice = sequelize.define("Invoice", {
       allowNull: true,
     },
 
+    eNcf: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    tipoeCF: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    electronicInvoiceStatus: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
     customerName: {
       type: DataTypes.STRING,
       allowNull: false,

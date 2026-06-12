@@ -30,8 +30,33 @@ export const PosSale = sequelize.define("PosSale", {
     allowNull: true,
   },
 
+  customerName: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+
   dgiiQrUrl: {
     type: DataTypes.TEXT,
+    allowNull: true,
+  },
+
+  eNcf: {
+  type: DataTypes.STRING,
+  allowNull: true,
+  },
+
+  tipoeCF: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+
+  electronicInvoiceStatus: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+
+  securityCode: {
+    type: DataTypes.STRING,
     allowNull: true,
   },
 

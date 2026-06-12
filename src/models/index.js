@@ -25,6 +25,7 @@ import { CashSession } from "./CashSession.js";
 import { PosSale } from "./PosSale.js";
 import { PosSaleItem } from "./PosSaleItem.js";
 import { CashRegisterUser } from "./CashRegisterUser.js";
+import { ElectronicInvoice } from "./ElectronicInvoice.js";
 
 Invoice.belongsTo(User, {
   foreignKey: "createdBy",
@@ -140,6 +141,7 @@ export {
   StockMovement,
   Invoice,
   InvoiceItem,
+  ElectronicInvoice,
   Quote,
   QuoteItem,
   DeliveryNote,

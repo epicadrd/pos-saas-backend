@@ -7,11 +7,12 @@ import {
 } from "../controllers/userController.js";
 import { protect, requireRole } from "../middlewares/authMiddleware.js";
 import {requireActiveSubscription} from "../middlewares/subscriptionMiddleware.js";
+import { requireUserLimit } from "../middlewares/planMiddleware.js";
 
 const router = express.Router();
 
 router.get("/", protect, requireRole("master"), requireActiveSubscription, getUsers);
-router.post("/", protect, requireRole("master"), requireActiveSubscription,  createUser);
+router.post("/", protect, requireRole("master"), requireActiveSubscription, requireUserLimit,createUser);
 router.put("/:id", protect, requireRole("master"), requireActiveSubscription, updateUser);
 router.patch("/:id/deactivate", protect, requireRole("master"), requireActiveSubscription, deactivateUser);
 

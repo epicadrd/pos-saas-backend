@@ -11,22 +11,24 @@ import {
 } from "../controllers/productController.js";
 import { protect, requireRole } from "../middlewares/authMiddleware.js";
 import { requireActiveSubscription } from "../middlewares/subscriptionMiddleware.js";
+import { requirePlanFeature } from "../middlewares/planMiddleware.js";
 
 const router = express.Router();
 
-router.get("/", protect, requireActiveSubscription, requireRole("master", "admin", "employee"), getProducts);
-router.get("/:id/movements", protect, requireActiveSubscription, requireRole("master", "admin"), getProductMovements);
+router.get("/", protect, requireActiveSubscription, requirePlanFeature("inventory"), requireRole("master", "admin", "employee"), getProducts);
 
-router.post("/", protect, requireActiveSubscription, requireRole("master", "admin"), createProduct);
+router.get("/:id/movements", protect, requireActiveSubscription, requirePlanFeature("inventory"), requireRole("master", "admin"), getProductMovements);
 
-router.post("/:id/movements", protect, requireActiveSubscription, requireRole("master", "admin"), createStockMovement);
+router.post("/", protect, requireActiveSubscription, requirePlanFeature("inventory"), requireRole("master", "admin"), createProduct);
 
-router.post("/import", protect, requireActiveSubscription, requireRole("master", "admin"), importProducts);
+router.post("/:id/movements", protect, requireActiveSubscription,requirePlanFeature("inventory"),  requireRole("master", "admin"), createStockMovement);
 
-router.put("/:id", protect, requireActiveSubscription, requireRole("master", "admin"), updateProduct);
+router.post("/import", protect, requireActiveSubscription, requirePlanFeature("inventory"), requireRole("master", "admin"), importProducts);
 
-router.patch("/:id/reactivate", protect, requireActiveSubscription, requireRole("master", "admin"), reactivateProduct);
+router.put("/:id", protect, requireActiveSubscription, requirePlanFeature("inventory"), requireRole("master", "admin"), updateProduct);
 
-router.delete("/:id", protect, requireActiveSubscription, requireRole("master", "admin"), deleteProduct);
+router.patch("/:id/reactivate", protect, requireActiveSubscription, requirePlanFeature("inventory"), requireRole("master", "admin"), reactivateProduct);
+
+router.delete("/:id", protect, requireActiveSubscription, requirePlanFeature("inventory"), requireRole("master", "admin"), deleteProduct);
 
 export default router;

@@ -12,37 +12,47 @@ import {
   Tenant,
 } from "../models/index.js";
 import { sanitizeString, sanitizeNumber, sanitizeInteger } from "../utils/sanitize.js";
+import { sendECFToMSeller,} from "../services/msellerService.js";
 
 const generateCode = (id) => `CAJA-${String(id).padStart(3, "0")}`;
 const generateSaleNumber = (id) => `POS-${String(id).padStart(8, "0")}`;
 const roundMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
 const calculateSessionSummary = async (tenantId, cashSessionId) => {
   const sales = await PosSale.findAll({
-    where: {
-      tenantId,
-      cashSessionId,
-      status: "paid",
-    },
+    where: { tenantId, cashSessionId, status: "paid" },
+    include: [{ model: PosSaleItem, as: "items" }],
   });
 
   return sales.reduce(
     (acc, sale) => {
       const total = Number(sale.total || 0);
+      const subtotal = Number(sale.subtotal || 0);
+      const discount = Number(sale.discountTotal || 0);
+      const tax = Number(sale.taxTotal || 0);
       const method = sale.paymentMethod || "cash";
 
-      acc.totalSales += total;
       acc.salesCount += 1;
+      acc.totalSales += total;
+      acc.subtotal += subtotal;
+      acc.discountTotal += discount;
+      acc.taxTotal += tax;
+      acc.itemsCount += (sale.items || []).reduce(
+        (sum, item) => sum + Number(item.quantity || 0),
+        0
+      );
 
-      if (!acc.byPaymentMethod[method]) {
-        acc.byPaymentMethod[method] = 0;
-      }
-
+      if (!acc.byPaymentMethod[method]) acc.byPaymentMethod[method] = 0;
       acc.byPaymentMethod[method] += total;
 
       return acc;
     },
     {
       salesCount: 0,
+      itemsCount: 0,
+      subtotal: 0,
+      discountTotal: 0,
+      taxTotal: 0,
       totalSales: 0,
       byPaymentMethod: {
         cash: 0,
@@ -310,6 +320,106 @@ export const closeCashSession = async (req, res) => {
   }
 };
 
+const formatDateDDMMYYYY = (dateValue) => {
+  const date = dateValue ? new Date(dateValue) : new Date();
+
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+
+  return `${day}-${month}-${year}`;
+};
+
+const getPosTipoECF = (receiptType) => {
+  return receiptType === "credit_fiscal" ? "31" : "32";
+};
+
+const buildECFPayloadFromPosSale = ({ sale, tenant, items, eNcf }) => {
+  const tipoeCF = getPosTipoECF(sale.receiptType);
+
+  const taxableAmount = roundMoney(
+    items.reduce((acc, item) => acc + Number(item.total || 0), 0)
+  );
+
+  const itbisAmount = roundMoney(Number(sale.taxTotal || 0));
+  const totalAmount = roundMoney(Number(sale.total || 0));
+
+  return {
+    ECF: {
+      Encabezado: {
+        Version: "1.0",
+        IdDoc: {
+          TipoeCF: tipoeCF,
+          eNCF: eNcf,
+          FechaVencimientoSecuencia: "31-12-2028",
+          IndicadorEnvioDiferido: "1",
+          IndicadorMontoGravado: "0",
+          TipoIngresos: "01",
+          TipoPago: "1",
+          TotalPaginas: 1,
+        },
+        Emisor: {
+          RNCEmisor: tenant.rnc,
+          RazonSocialEmisor: tenant.legalName || tenant.businessName,
+          DireccionEmisor: tenant.address || "Direccion no especificada",
+          FechaEmision: formatDateDDMMYYYY(sale.createdAt),
+        },
+       Comprador: {
+          RNCComprador:
+            sale.receiptType === "credit_fiscal"
+              ? sale.customerRnc
+              : "00000000000",
+
+          RazonSocialComprador:
+            sale.receiptType === "credit_fiscal"
+              ? sale.customerName
+              : "Consumidor Final",
+        },
+        Totales: {
+          MontoGravadoTotal: taxableAmount,
+          MontoGravadoI1: taxableAmount,
+          MontoExento: 0,
+          ITBIS1: 18,
+          TotalITBIS: itbisAmount,
+          TotalITBIS1: itbisAmount,
+          MontoTotal: totalAmount,
+          MontoNoFacturable: 0,
+        },
+      },
+      DetallesItems: {
+        Item: items.map((item, index) => ({
+          NumeroLinea: String(index + 1),
+          IndicadorFacturacion: "1",
+          NombreItem: item.productName,
+          IndicadorBienoServicio: "1",
+          CantidadItem: Number(item.quantity || 1),
+          UnidadMedida: "43",
+          PrecioUnitarioItem: roundMoney(item.unitPrice),
+          DescuentoMonto: roundMoney(item.discountAmount),
+          MontoItem: roundMoney(item.total),
+        })),
+      },
+      Paginacion: {
+        Pagina: [
+          {
+            PaginaNo: 1,
+            NoLineaDesde: 1,
+            NoLineaHasta: items.length,
+            SubtotalMontoGravadoPagina: taxableAmount,
+            SubtotalMontoGravado1Pagina: taxableAmount,
+            SubtotalExentoPagina: 0,
+            SubtotalItbisPagina: itbisAmount,
+            SubtotalItbis1Pagina: itbisAmount,
+            MontoSubtotalPagina: totalAmount,
+            SubtotalMontoNoFacturablePagina: 0,
+          },
+        ],
+      },
+      FechaHoraFirma: "",
+    },
+  };
+};
+
 export const createPosSale = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -323,6 +433,7 @@ export const createPosSale = async (req, res) => {
     const orderDiscount = sanitizeNumber(req.body.discountTotal);
     const receiptType = sanitizeString(req.body.receiptType, 30) || "consumer_final";
     const customerRnc = sanitizeString(req.body.customerRnc, 30) || null;
+    const customerName = sanitizeString(req.body.customerName, 255) || null;
 
     const validReceiptTypes = ["consumer_final", "credit_fiscal"];
 
@@ -331,10 +442,10 @@ export const createPosSale = async (req, res) => {
       return res.status(400).json({ message: "Tipo de factura inválido" });
     }
 
-    if (receiptType === "credit_fiscal" && !customerRnc) {
+    if (receiptType === "credit_fiscal" && (!customerRnc || !customerName)) {
       await transaction.rollback();
       return res.status(400).json({
-        message: "El RNC del cliente es obligatorio para crédito fiscal",
+        message: "El RNC y la razón social del cliente son obligatorios para crédito fiscal",
       });
     }
     const items = Array.isArray(req.body.items) ? req.body.items : [];
@@ -454,6 +565,7 @@ export const createPosSale = async (req, res) => {
         subtotal,
         receiptType,
         customerRnc,
+        customerName,
         discountTotal,
         taxTotal,
         total,
@@ -520,6 +632,52 @@ export const createPosSale = async (req, res) => {
     );
 
    await transaction.commit();
+   try {
+      const createdSale = await PosSale.findOne({
+        where: { id: sale.id, tenantId },
+        include: [{ model: PosSaleItem, as: "items" }],
+      });
+
+     const tenantForECF = await Tenant.findByPk(tenantId, {
+        attributes: [
+          "businessName",
+          "legalName",
+          "rnc",
+          "phone",
+          "email",
+          "address",
+        ],
+      });
+      if (tenantForECF?.rnc && createdSale) {
+        const tipoeCF = getPosTipoECF(createdSale.receiptType);
+
+        const eNcf =
+          req.body?.eNcf ||
+          `E${tipoeCF}${String(Date.now()).slice(-10)}`;
+
+        const payload = buildECFPayloadFromPosSale({
+          sale: createdSale,
+          tenant: tenantForECF,
+          items: createdSale.items || [],
+          eNcf,
+        });
+
+        const ecfResult = await sendECFToMSeller(payload);
+
+        await createdSale.update({
+          dgiiQrUrl: ecfResult.qr_url || null,
+          eNcf: ecfResult.ecf || ecfResult.ncf || eNcf,
+          tipoeCF,
+          electronicInvoiceStatus: ecfResult.status || "Enviado",
+          securityCode: ecfResult.securityCode || null,
+        });
+      }
+    } catch (ecfError) {
+      console.log(
+        "POS ECF ERROR:",
+        ecfError.response?.data || ecfError.message
+      );
+    }
     const saleDetail = await PosSale.findOne({
       where: {
         id: sale.id,
@@ -821,5 +979,107 @@ export const getCashSessionSummary = async (req, res) => {
   } catch (error) {
     console.log("GET CASH SESSION SUMMARY ERROR:", error);
     return res.status(500).json({ message: "Error obteniendo resumen de caja" });
+  }
+};
+
+export const getCashSessionClosures = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+
+    const where = {
+      tenantId,
+      status: "closed",
+    };
+
+    const cashRegisterId = sanitizeInteger(req.query.cashRegisterId);
+    const dateFrom = sanitizeString(req.query.dateFrom, 20);
+    const dateTo = sanitizeString(req.query.dateTo, 20);
+
+    if (cashRegisterId) where.cashRegisterId = cashRegisterId;
+
+    if (dateFrom || dateTo) {
+      where.closedAt = {};
+
+      if (dateFrom) where.closedAt[Op.gte] = new Date(`${dateFrom}T00:00:00`);
+      if (dateTo) where.closedAt[Op.lte] = new Date(`${dateTo}T23:59:59`);
+    }
+
+    const sessions = await CashSession.findAll({
+      where,
+      include: [
+        { model: CashRegister, as: "cashRegister", attributes: ["id", "name", "code"] },
+        { model: User, as: "user", attributes: ["id", "name", "email"] },
+      ],
+      order: [["closedAt", "DESC"]],
+      limit: 300,
+    });
+
+    return res.json(sessions);
+  } catch (error) {
+    console.log("GET CASH SESSION CLOSURES ERROR:", error);
+    return res.status(500).json({ message: "Error obteniendo historial de cierres" });
+  }
+};
+
+export const getCashSessionReport = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const sessionId = sanitizeInteger(req.params.id);
+
+    const session = await CashSession.findOne({
+      where: {
+        id: sessionId,
+        tenantId,
+        status: "closed",
+      },
+      include: [
+        { model: CashRegister, as: "cashRegister", attributes: ["id", "name", "code"] },
+        { model: User, as: "user", attributes: ["id", "name", "email"] },
+      ],
+    });
+
+    if (!session) {
+      return res.status(404).json({ message: "Cierre de caja no encontrado" });
+    }
+
+    const sales = await PosSale.findAll({
+      where: {
+        tenantId,
+        cashSessionId: session.id,
+        status: "paid",
+      },
+      include: [
+        { model: PosSaleItem, as: "items" },
+        { model: User, as: "user", attributes: ["id", "name", "email"] },
+      ],
+      order: [["createdAt", "ASC"]],
+    });
+
+    const summary = await calculateSessionSummary(tenantId, session.id);
+
+    return res.json({
+      session,
+      summary: {
+        openingAmount: Number(session.openingAmount || 0),
+        closingAmount: Number(session.closingAmount || 0),
+        expectedAmount: Number(session.expectedAmount || 0),
+        difference: Number(session.difference || 0),
+        salesCount: summary.salesCount,
+        itemsCount: summary.itemsCount,
+        subtotal: summary.subtotal,
+        discountTotal: summary.discountTotal,
+        taxTotal: summary.taxTotal,
+        totalSales: summary.totalSales,
+        cashSales: summary.byPaymentMethod.cash || 0,
+        cardSales: summary.byPaymentMethod.card || 0,
+        transferSales: summary.byPaymentMethod.transfer || 0,
+        checkSales: summary.byPaymentMethod.check || 0,
+        mixedSales: summary.byPaymentMethod.mixed || 0,
+      },
+      sales,
+    });
+  } catch (error) {
+    console.log("GET CASH SESSION REPORT ERROR:", error);
+    return res.status(500).json({ message: "Error generando reporte de caja" });
   }
 };
