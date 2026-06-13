@@ -24,10 +24,27 @@ export const createCheckoutSession = async (req, res) => {
 
     let customerId = tenant.stripeCustomerId;
 
+    if (customerId) {
+      try {
+        await stripe.customers.retrieve(customerId);
+      } catch (error) {
+        if (error.code === "resource_missing") {
+          customerId = null;
+          await tenant.update({ stripeCustomerId: null });
+        } else {
+          throw error;
+        }
+      }
+    }
+
     if (!customerId) {
       const customer = await stripe.customers.create({
-        name: tenant.businessName,
-        metadata: { tenantId: String(tenant.id) },
+        name: tenant.businessName || tenant.name || "Cliente Corex",
+        email: req.user?.email || undefined,
+        metadata: {
+          tenantId: String(tenant.id),
+          plan,
+        },
       });
 
       customerId = customer.id;
@@ -61,7 +78,15 @@ export const createCheckoutSession = async (req, res) => {
 
     return res.json({ url: session.url });
   } catch (error) {
-    console.log("CREATE CHECKOUT SESSION ERROR:", error);
+    console.log("CREATE CHECKOUT SESSION ERROR:", {
+      message: error.message,
+      code: error.code,
+      type: error.type,
+      param: error.param,
+      statusCode: error.statusCode,
+      raw: error.raw,
+    });
+
     return res.status(500).json({ message: "Error creando sesión de pago" });
   }
 };
