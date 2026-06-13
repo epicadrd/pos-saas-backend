@@ -35,22 +35,60 @@ const syncSubscriptionToTenant = async (subscription) => {
         where: { stripeSubscriptionId: subscription.id },
       });
 
-  if (!tenant) return;
+  if (!tenant) {
+    console.log("⚠️ No se encontró tenant para subscription:", {
+      subscriptionId: subscription.id,
+      tenantId,
+      customer: subscription.customer,
+    });
+    return;
+  }
 
   const periodEnd = await getPeriodEnd(subscription);
-  
+
   await tenant.update({
     plan: subscription.metadata?.plan || tenant.plan,
     subscriptionStatus: subscription.status,
     stripeCustomerId: subscription.customer,
     stripeSubscriptionId: subscription.id,
-    stripePriceId: subscription.items?.data?.[0]?.price?.id || tenant.stripePriceId,
+    stripePriceId:
+      subscription.items?.data?.[0]?.price?.id || tenant.stripePriceId,
     subscriptionCurrentPeriodEnd: periodEnd,
     cancelAtPeriodEnd: subscription.cancel_at_period_end || false,
     subscriptionCancelAt: subscription.cancel_at
       ? new Date(subscription.cancel_at * 1000)
       : null,
   });
+
+  console.log("✅ Tenant sincronizado con Stripe:", {
+    tenantId: tenant.id,
+    status: subscription.status,
+    plan: subscription.metadata?.plan || tenant.plan,
+    periodEnd,
+  });
+};
+
+const getSubscriptionIdFromInvoice = (invoice) => {
+  return (
+    invoice.subscription ||
+    invoice.parent?.subscription_details?.subscription ||
+    null
+  );
+};
+
+const syncInvoiceSubscriptionToTenant = async (invoice) => {
+  const subscriptionId = getSubscriptionIdFromInvoice(invoice);
+
+  if (!subscriptionId) {
+    console.log("⚠️ Invoice sin subscription:", invoice.id);
+    return;
+  }
+
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ["latest_invoice", "items.data.price"],
+  });
+
+  await syncSubscriptionToTenant(subscription);
 };
 
 export const handleStripeWebhook = async (req, res) => {
@@ -73,6 +111,11 @@ export const handleStripeWebhook = async (req, res) => {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
+
+        if (!session.subscription) {
+          console.log("⚠️ Checkout completado sin subscription:", session.id);
+          break;
+        }
 
         const subscription = await stripe.subscriptions.retrieve(
           session.subscription,
@@ -111,10 +154,63 @@ export const handleStripeWebhook = async (req, res) => {
             cancelAtPeriodEnd: false,
             subscriptionCancelAt: null,
           });
+
+          console.log("🛑 Suscripción cancelada, tenant actualizado:", tenant.id);
+        } else {
+          console.log("⚠️ Suscripción cancelada pero no se encontró tenant:", {
+            subscriptionId: subscription.id,
+            customer: subscription.customer,
+          });
         }
 
         break;
       }
+
+      case "invoice.paid":
+      case "invoice.payment_succeeded": {
+        const invoice = event.data.object;
+        await syncInvoiceSubscriptionToTenant(invoice);
+        break;
+      }
+
+      case "invoice.payment_failed": {
+        const invoice = event.data.object;
+        const subscriptionId = getSubscriptionIdFromInvoice(invoice);
+
+        let tenant = null;
+
+        if (subscriptionId) {
+          tenant = await Tenant.findOne({
+            where: { stripeSubscriptionId: subscriptionId },
+          });
+        }
+
+        if (!tenant && invoice.customer) {
+          tenant = await Tenant.findOne({
+            where: { stripeCustomerId: invoice.customer },
+          });
+        }
+
+        if (tenant) {
+          await tenant.update({
+            subscriptionStatus: "past_due",
+          });
+
+          console.log("❌ Pago fallido, tenant actualizado:", tenant.id);
+        } else {
+          console.log("⚠️ Pago fallido pero no se encontró tenant:", {
+            invoiceId: invoice.id,
+            customer: invoice.customer,
+            subscriptionId,
+          });
+        }
+
+        break;
+      }
+
+      case "billing_portal.session.created":
+        console.log("Portal de Stripe abierto correctamente");
+        break;
 
       default:
         console.log("Evento no manejado:", event.type);

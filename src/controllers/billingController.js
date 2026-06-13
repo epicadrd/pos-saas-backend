@@ -7,12 +7,51 @@ const PLAN_PRICE_MAP = {
   empresarial: process.env.STRIPE_PRICE_EMPRESARIAL,
 };
 
+const getValidStripeCustomerId = async (tenant) => {
+  let customerId = tenant.stripeCustomerId;
+
+  if (customerId) {
+    try {
+      const customer = await stripe.customers.retrieve(customerId);
+
+      if (customer?.deleted) {
+        customerId = null;
+        await tenant.update({ stripeCustomerId: null });
+      }
+    } catch (error) {
+      if (error.code === "resource_missing") {
+        customerId = null;
+        await tenant.update({ stripeCustomerId: null });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      name: tenant.businessName || "Cliente Corex",
+      email: tenant.email || undefined,
+      metadata: {
+        tenantId: String(tenant.id),
+      },
+    });
+
+    customerId = customer.id;
+    await tenant.update({ stripeCustomerId: customerId });
+  }
+
+  return customerId;
+};
+
 export const createCheckoutSession = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
     const { plan } = req.body;
 
-    if (!PLAN_PRICE_MAP[plan]) {
+    const priceId = PLAN_PRICE_MAP[plan];
+
+    if (!priceId) {
       return res.status(400).json({ message: "Plan inválido" });
     }
 
@@ -22,35 +61,7 @@ export const createCheckoutSession = async (req, res) => {
       return res.status(404).json({ message: "Empresa no encontrada" });
     }
 
-    let customerId = tenant.stripeCustomerId;
-
-    if (customerId) {
-      try {
-        await stripe.customers.retrieve(customerId);
-      } catch (error) {
-        if (error.code === "resource_missing") {
-          customerId = null;
-          await tenant.update({ stripeCustomerId: null });
-        } else {
-          throw error;
-        }
-      }
-    }
-
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        name: tenant.businessName || tenant.name || "Cliente Corex",
-        email: req.user?.email || undefined,
-        metadata: {
-          tenantId: String(tenant.id),
-          plan,
-        },
-      });
-
-      customerId = customer.id;
-
-      await tenant.update({ stripeCustomerId: customerId });
-    }
+    const customerId = await getValidStripeCustomerId(tenant);
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -58,7 +69,7 @@ export const createCheckoutSession = async (req, res) => {
       payment_method_types: ["card"],
       line_items: [
         {
-          price: PLAN_PRICE_MAP[plan],
+          price: priceId,
           quantity: 1,
         },
       ],
@@ -97,7 +108,7 @@ export const confirmCheckoutSession = async (req, res) => {
     const tenantId = req.user.tenantId;
 
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["subscription", "subscription.latest_invoice", "subscription.items.data.price"],
+      expand: ["subscription", "subscription.items.data.price"],
     });
 
     if (String(session.metadata?.tenantId) !== String(tenantId)) {
@@ -109,26 +120,30 @@ export const confirmCheckoutSession = async (req, res) => {
     }
 
     const subscription =
-     typeof session.subscription === "string"
-    ? await stripe.subscriptions.retrieve(session.subscription)
-    : session.subscription;
+      typeof session.subscription === "string"
+        ? await stripe.subscriptions.retrieve(session.subscription, {
+            expand: ["items.data.price"],
+          })
+        : session.subscription;
 
     const tenant = await Tenant.findByPk(tenantId);
 
     await tenant.update({
       plan: session.metadata.plan,
-      subscriptionStatus: subscription.status === "active" ? "active" : subscription.status,
+      subscriptionStatus: subscription.status,
       stripeCustomerId: session.customer,
       stripeSubscriptionId: subscription.id,
       stripePriceId: subscription.items.data[0]?.price?.id || null,
       subscriptionCurrentPeriodEnd:
         subscription.items?.data?.[0]?.current_period_end
-          ? new Date(
-              subscription.items.data[0].current_period_end * 1000
-            )
+          ? new Date(subscription.items.data[0].current_period_end * 1000)
           : subscription.current_period_end
           ? new Date(subscription.current_period_end * 1000)
           : null,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end || false,
+      subscriptionCancelAt: subscription.cancel_at
+        ? new Date(subscription.cancel_at * 1000)
+        : null,
     });
 
     return res.json({
@@ -143,14 +158,10 @@ export const confirmCheckoutSession = async (req, res) => {
 
 export const createBillingPortalSession = async (req, res) => {
   try {
-    const tenantId = req.user.tenantId;
-
-    const tenant = await Tenant.findByPk(tenantId);
+    const tenant = await Tenant.findByPk(req.user.tenantId);
 
     if (!tenant) {
-      return res.status(404).json({
-        message: "Empresa no encontrada",
-      });
+      return res.status(404).json({ message: "Empresa no encontrada" });
     }
 
     if (!tenant.stripeCustomerId) {
@@ -159,16 +170,16 @@ export const createBillingPortalSession = async (req, res) => {
       });
     }
 
+    const customerId = await getValidStripeCustomerId(tenant);
+
     const portalSession = await stripe.billingPortal.sessions.create({
-      customer: tenant.stripeCustomerId,
+      customer: customerId,
       return_url:
         process.env.STRIPE_BILLING_PORTAL_RETURN_URL ||
         `${process.env.APP_URL}/dashboard/facturacion/billing`,
     });
 
-    return res.json({
-      url: portalSession.url,
-    });
+    return res.json({ url: portalSession.url });
   } catch (error) {
     console.log("CREATE BILLING PORTAL ERROR:", error);
     return res.status(500).json({
@@ -181,19 +192,24 @@ export const retryPayment = async (req, res) => {
   try {
     const tenant = await Tenant.findByPk(req.user.tenantId);
 
-    if (!tenant?.stripeCustomerId) {
-      return res.status(400).json({
-        message: "Cliente de Stripe no encontrado.",
-      });
+    if (!tenant) {
+      return res.status(404).json({ message: "Empresa no encontrada." });
     }
 
+    const customerId = await getValidStripeCustomerId(tenant);
+
     const invoices = await stripe.invoices.list({
-      customer: tenant.stripeCustomerId,
+      customer: customerId,
       status: "open",
-      limit: 1,
+      limit: 10,
     });
 
-    const invoice = invoices.data[0];
+    const invoice = invoices.data.find(
+      (item) =>
+        item.subscription === tenant.stripeSubscriptionId ||
+        item.parent?.subscription_details?.subscription ===
+          tenant.stripeSubscriptionId
+    );
 
     if (!invoice) {
       return res.status(404).json({
@@ -201,18 +217,54 @@ export const retryPayment = async (req, res) => {
       });
     }
 
-    await stripe.invoices.pay(invoice.id);
+    const paidInvoice = await stripe.invoices.pay(invoice.id, {
+      expand: ["subscription", "lines.data.price"],
+    });
+
+    const subscriptionId =
+      paidInvoice.subscription ||
+      paidInvoice.parent?.subscription_details?.subscription ||
+      tenant.stripeSubscriptionId;
+
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ["latest_invoice", "items.data.price"],
+    });
+
+    const periodEnd =
+      subscription.current_period_end ||
+      subscription.items?.data?.[0]?.current_period_end ||
+      paidInvoice.lines?.data?.[0]?.period?.end;
+
+    await tenant.update({
+      subscriptionStatus: subscription.status || "active",
+      stripeCustomerId: subscription.customer || customerId,
+      stripeSubscriptionId: subscription.id,
+      stripePriceId:
+        subscription.items?.data?.[0]?.price?.id || tenant.stripePriceId,
+      subscriptionCurrentPeriodEnd: periodEnd
+        ? new Date(periodEnd * 1000)
+        : tenant.subscriptionCurrentPeriodEnd,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end || false,
+      subscriptionCancelAt: subscription.cancel_at
+        ? new Date(subscription.cancel_at * 1000)
+        : null,
+    });
 
     return res.json({
       success: true,
-      message: "Pago procesado correctamente.",
+      message: "Pago procesado correctamente. Tu suscripción fue reactivada.",
+      tenant,
     });
   } catch (error) {
-    console.log("❌ Error retry payment:", error);
+    console.log("❌ Error retry payment:", {
+      message: error.message,
+      code: error.code,
+      type: error.type,
+      raw: error.raw,
+    });
 
     return res.status(400).json({
-      message:
-        "No pudimos procesar el pago. Verifica tu método de pago.",
+      message: "No pudimos procesar el pago. Verifica tu método de pago.",
     });
   }
 };
