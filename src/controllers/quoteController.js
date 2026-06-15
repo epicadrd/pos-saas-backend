@@ -212,7 +212,7 @@ export const createQuote = async (req, res) => {
     }
 
     if (!Array.isArray(items) || items.length === 0) {
-      throw new Error("Debes agregar al menos un producto");
+      throw new Error("Debes agregar al menos un producto o servicio");
     }
 
     const validStatuses = ["draft", "sent", "approved", "rejected"];
@@ -369,7 +369,7 @@ export const convertQuoteToInvoice = async (req, res) => {
     }
 
     if (!quote.items || quote.items.length === 0) {
-      throw new Error("La cotización no tiene productos");
+      throw new Error("La cotización no tiene productos o servicios");
     }
 
     const tenant = await Tenant.findByPk(tenantId, {
@@ -486,7 +486,7 @@ export const updateQuote = async (req, res) => {
     }
 
     if (!Array.isArray(items) || items.length === 0) {
-      throw new Error("Debes agregar al menos un producto");
+      throw new Error("Debes agregar al menos un producto o servicio");
     }
 
     const tenant = await Tenant.findByPk(tenantId, { transaction });

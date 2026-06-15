@@ -82,35 +82,47 @@ const validateAndNormalizeItems = async ({
   const normalizedItems = [];
 
   for (const item of items) {
-    const productId = item.productId || item.id;
+    const productId = item.productId || item.id || null;
     const quantity = sanitizeInteger(item.quantity);
     const price = sanitizeNumber(item.price ?? item.unitPrice);
     const discountAmount = sanitizeNumber(item.discount);
 
-    if (!productId) throw new Error("Producto inválido en factura");
     if (quantity <= 0) throw new Error("La cantidad debe ser mayor a cero");
     if (price < 0) throw new Error("El precio no puede ser negativo");
     if (discountAmount < 0) throw new Error("El descuento no puede ser negativo");
 
-    const product = await Product.findOne({
-      where: { id: productId, tenantId, isActive: true },
-      transaction,
-      lock: transaction.LOCK.UPDATE,
-    });
+    let product = null;
 
-    if (!product) {
-      throw new Error("Producto no encontrado o no pertenece a esta empresa");
+    if (productId) {
+      product = await Product.findOne({
+        where: { id: productId, tenantId, isActive: true },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+
+      if (!product) {
+        throw new Error("Producto no encontrado o no pertenece a esta empresa");
+      }
+
+      if (
+        shouldValidateStock &&
+        product.productType === "product" &&
+        product.trackStock &&
+        Number(product.stock) < quantity
+      ) {
+        throw new Error(
+          `Stock insuficiente para ${product.name}. Disponible: ${product.stock}`
+        );
+      }
     }
 
-    if (
-      shouldValidateStock &&
-      product.productType === "product" &&
-      product.trackStock &&
-      Number(product.stock) < quantity
-    ) {
-      throw new Error(
-        `Stock insuficiente para ${product.name}. Disponible: ${product.stock}`
-      );
+    const manualName = sanitizeString(
+      item.productName || item.description || "",
+      300
+    );
+
+    if (!product && !manualName) {
+      throw new Error("Debes escribir el producto o servicio de la factura");
     }
 
     const grossSubtotal = roundMoney(quantity * price);
@@ -131,10 +143,10 @@ const validateAndNormalizeItems = async ({
 
     normalizedItems.push({
       product,
-      productId: product.id,
-      productName: product.name,
+      productId: product?.id || null,
+      productName: product?.name || manualName,
       description:
-        sanitizeString(item.description || product.description || "", 1000) ||
+        sanitizeString(item.description || product?.description || "", 1000) ||
         null,
       quantity,
       unitPrice: roundMoney(price),
@@ -149,6 +161,7 @@ const validateAndNormalizeItems = async ({
 
   return normalizedItems;
 };
+
 const saveInvoiceItems = async ({ invoice, items, tenantId, transaction }) => {
   await InvoiceItem.destroy({
     where: { invoiceId: invoice.id, tenantId },
@@ -186,6 +199,7 @@ const applyInvoiceStockExit = async ({
 }) => {
   for (const item of items) {
     const product = item.product;
+    if (!product) continue;
 
     if (product.productType === "product" && product.trackStock) {
       const previousStock = Number(product.stock);
@@ -563,6 +577,7 @@ export const issueDraftInvoice = async (req, res) => {
 
     const itemsForValidation = invoice.items.map((item) => ({
       productId: item.productId,
+      productName: item.productName,
       quantity: item.quantity,
       price: item.unitPrice,
       discount: item.discount,
