@@ -435,19 +435,13 @@ export const createPosSale = async (req, res) => {
     const customerRnc = sanitizeString(req.body.customerRnc, 30) || null;
     const customerName = sanitizeString(req.body.customerName, 255) || null;
 
-    const validReceiptTypes = ["consumer_final", "credit_fiscal"];
+    const validReceiptTypes = ["consumer_final", "credit_fiscal", "regular"];
 
     if (!validReceiptTypes.includes(receiptType)) {
       await transaction.rollback();
       return res.status(400).json({ message: "Tipo de factura inválido" });
     }
 
-    if (receiptType === "credit_fiscal" && (!customerRnc || !customerName)) {
-      await transaction.rollback();
-      return res.status(400).json({
-        message: "El RNC y la razón social del cliente son obligatorios para crédito fiscal",
-      });
-    }
     const items = Array.isArray(req.body.items) ? req.body.items : [];
 
     if (!items.length) {
@@ -478,14 +472,24 @@ export const createPosSale = async (req, res) => {
       "phone",
       "email",
       "address",
+      "country",
       "invoiceTaxEnabled",
       "invoiceTaxRate",
+      "usStateTaxRate",
+      "usCountyTaxRate",
+      "usCityTaxRate",
     ],
     transaction,
   });
 
-  const taxEnabled = tenant?.invoiceTaxEnabled !== false;
-  const taxRate = Number(tenant?.invoiceTaxRate || 18);
+ const taxEnabled = tenant?.invoiceTaxEnabled !== false;
+
+  const taxRate =
+    tenant?.country === "US"
+      ? Number(tenant?.usStateTaxRate || 0) +
+        Number(tenant?.usCountyTaxRate || 0) +
+        Number(tenant?.usCityTaxRate || 0)
+      : Number(tenant?.invoiceTaxRate || 18);
 
     let subtotal = 0;
     let lineDiscountTotal = 0;
@@ -646,9 +650,10 @@ export const createPosSale = async (req, res) => {
           "phone",
           "email",
           "address",
+          "country",
         ],
       });
-      if (tenantForECF?.rnc && createdSale) {
+      if (tenantForECF?.country === "DO" && tenantForECF?.rnc && createdSale) {
         const tipoeCF = getPosTipoECF(createdSale.receiptType);
 
         const eNcf =
@@ -706,7 +711,18 @@ export const createPosSale = async (req, res) => {
     });
 
     const tenantReceipt = await Tenant.findByPk(tenantId, {
-      attributes: ["businessName", "rnc", "phone", "email", "address"],
+      attributes: [
+        "businessName",
+        "rnc",
+        "phone", 
+        "email", 
+        "address",
+        "country",
+        "invoiceTaxRate",
+        "usStateTaxRate",
+        "usCountyTaxRate",
+        "usCityTaxRate",
+      ],
     });
 
     return res.status(201).json({
@@ -855,7 +871,19 @@ export const getPosSaleDetail = async (req, res) => {
     }
 
     const tenant = await Tenant.findByPk(tenantId, {
-      attributes: ["businessName", "rnc", "phone", "email", "address"],
+      attributes: [
+        "businessName",
+        "rnc",
+        "phone",
+        "email",
+        "address",
+        "country",
+        "invoiceTaxEnabled",
+        "invoiceTaxRate",
+        "usStateTaxRate",
+        "usCountyTaxRate",
+        "usCityTaxRate",
+      ],
     });
    
     return res.json({

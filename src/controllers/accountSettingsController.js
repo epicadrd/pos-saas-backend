@@ -52,20 +52,21 @@ export const updateAccountSettings = async (req, res) => {
       });
     }
 
-    const allowedFields = [
-      "businessName",
-      "legalName",
-      "rnc",
-      "companyType",
-      "address",
-      "legalAddress",
-      "email",
-      "phone",
-      "website",
-      "industry",
-      "clientEmail",
-      "clientAddress",
-    ];
+   const allowedFields = [
+    "businessName",
+    "legalName",
+    "rnc",
+    "companyType",
+    "address",
+    "legalAddress",
+    "email",
+    "phone",
+    "website",
+    "industry",
+    "clientEmail",
+    "clientAddress",
+    "country",
+  ];
 
     const payload = {};
 

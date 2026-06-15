@@ -414,6 +414,10 @@ export const updateTenant = async (req, res) => {
     const invoiceTaxEnabled = req.body.invoiceTaxEnabled;
     const invoiceTaxMode = req.body.invoiceTaxMode;
     const invoiceTaxRate = req.body.invoiceTaxRate;
+    const country = req.body.country;
+    const usStateTaxRate = req.body.usStateTaxRate;
+    const usCountyTaxRate = req.body.usCountyTaxRate;
+    const usCityTaxRate = req.body.usCityTaxRate;
     const invoiceNextNumber = req.body.invoiceNextNumber;
     const invoiceDigits = req.body.invoiceDigits;
 
@@ -457,10 +461,25 @@ export const updateTenant = async (req, res) => {
       invoiceTaxEnabled: typeof invoiceTaxEnabled === "boolean" ? invoiceTaxEnabled: tenant.invoiceTaxEnabled,
       invoiceTaxMode:  invoiceTaxMode === "line" || invoiceTaxMode === "global" ? invoiceTaxMode : tenant.invoiceTaxMode,
       invoiceTaxRate: invoiceTaxRate !== undefined && Number(invoiceTaxRate) >= 0 ? Number(invoiceTaxRate) : tenant.invoiceTaxRate,
-      invoicePrefix: invoicePrefix?.trim() || tenant.invoicePrefix || "FAC",
-      invoiceNextNumber: invoiceNextNumber !== undefined && Number(invoiceNextNumber) > 0 ? Number(invoiceNextNumber) : tenant.invoiceNextNumber,
-      invoiceDigits:invoiceDigits !== undefined && Number(invoiceDigits) >= 3 ? Number(invoiceDigits) : tenant.invoiceDigits,
-    });
+      country: country === "US" || country === "DO" ? country : tenant.country,
+      usStateTaxRate:
+        usStateTaxRate !== undefined && Number(usStateTaxRate) >= 0
+          ? Number(usStateTaxRate)
+          : tenant.usStateTaxRate,
+
+      usCountyTaxRate:
+        usCountyTaxRate !== undefined && Number(usCountyTaxRate) >= 0
+          ? Number(usCountyTaxRate)
+          : tenant.usCountyTaxRate,
+
+      usCityTaxRate:
+        usCityTaxRate !== undefined && Number(usCityTaxRate) >= 0
+          ? Number(usCityTaxRate)
+          : tenant.usCityTaxRate,
+            invoicePrefix: invoicePrefix?.trim() || tenant.invoicePrefix || "FAC",
+            invoiceNextNumber: invoiceNextNumber !== undefined && Number(invoiceNextNumber) > 0 ? Number(invoiceNextNumber) : tenant.invoiceNextNumber,
+            invoiceDigits:invoiceDigits !== undefined && Number(invoiceDigits) >= 3 ? Number(invoiceDigits) : tenant.invoiceDigits,
+          });
 
     await logSecurityEvent({
       req,

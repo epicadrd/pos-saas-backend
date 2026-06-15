@@ -78,6 +78,30 @@ invoiceTaxRate: {
   defaultValue: 18,
 },
 
+country: {
+  type: DataTypes.ENUM("DO", "US"),
+  allowNull: false,
+  defaultValue: "DO",
+},
+
+usStateTaxRate: {
+  type: DataTypes.DECIMAL(5, 2),
+  allowNull: false,
+  defaultValue: 0,
+},
+
+usCountyTaxRate: {
+  type: DataTypes.DECIMAL(5, 2),
+  allowNull: false,
+  defaultValue: 0,
+},
+
+usCityTaxRate: {
+  type: DataTypes.DECIMAL(5, 2),
+  allowNull: false,
+  defaultValue: 0,
+},
+
 invoicePrefix: {
   type: DataTypes.STRING,
   allowNull: false,

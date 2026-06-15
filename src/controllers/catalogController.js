@@ -62,14 +62,15 @@ export const getPublicCatalog = async (req, res) => {
         catalogToken: cleanToken,
     },
     attributes: [
-        "id",
-        "businessName",
-        "phone",
-        "email",
-        "address",
-        "logoDataUrl",
-        "primaryColor",
-        "catalogEnabled",
+      "id",
+      "businessName",
+      "phone",
+      "email",
+      "address",
+      "logoDataUrl",
+      "primaryColor",
+      "catalogEnabled",
+      "country",
     ],
     });
 

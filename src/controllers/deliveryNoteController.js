@@ -98,8 +98,19 @@ const normalizeItems = async ({
     const discountPercent = Math.min(Math.max(discount, 0), 100);
     const discountAmount = grossSubtotal * (discountPercent / 100);
     const subtotal = Math.max(grossSubtotal - discountAmount, 0);
+    const tenant = await Tenant.findByPk(tenantId, { transaction });
 
-    const taxRate = item.isTaxable === false ? 0 : 18;
+
+const tenantTaxRate =
+  tenant?.invoiceTaxEnabled === false
+    ? 0
+    : tenant?.country === "US"
+    ? Number(tenant.usStateTaxRate || 0) +
+      Number(tenant.usCountyTaxRate || 0) +
+      Number(tenant.usCityTaxRate || 0)
+    : Number(tenant?.invoiceTaxRate || 18);
+
+const taxRate = item.isTaxable === false ? 0 : tenantTaxRate;
     const tax = subtotal * (taxRate / 100);
     const total = subtotal + tax;
 
