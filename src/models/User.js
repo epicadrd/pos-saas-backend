@@ -42,6 +42,12 @@ export const User = sequelize.define("User", {
     defaultValue: true,
   },
 
+  preferredLanguage: {
+    type: DataTypes.ENUM("es", "en"),
+    allowNull: false,
+    defaultValue: "es",
+  },
+
   createdBy: {
     type: DataTypes.INTEGER,
     allowNull: true,

@@ -69,6 +69,7 @@ const cleanUser = (user) => {
     email: user.email,
     role: user.role,
     isActive: user.isActive,
+    preferredLanguage: user.preferredLanguage || "es",
   };
 };
 
@@ -763,6 +764,47 @@ export const resetPassword = async (req, res) => {
 
     return res.status(500).json({
       message: "Error restableciendo contraseña",
+    });
+  }
+};
+
+export const updateLanguage = async (req, res) => {
+  try {
+    const language = sanitizeString(req.body.language, 10);
+
+    if (!["es", "en"].includes(language)) {
+      return res.status(400).json({
+        message: "Idioma no soportado",
+      });
+    }
+
+    const user = await User.findOne({
+      where: {
+        id: req.user.id,
+        tenantId: req.user.tenantId,
+        isActive: true,
+      },
+      include: [{ model: Tenant }],
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "Usuario no encontrado",
+      });
+    }
+
+    await user.update({ preferredLanguage: language });
+
+    return res.json({
+      message: "Idioma actualizado correctamente",
+      user: cleanUser(user),
+      tenant: user.Tenant,
+    });
+  } catch (error) {
+    logger.error("UPDATE_LANGUAGE_ERROR", error);
+
+    return res.status(500).json({
+      message: "Error actualizando idioma",
     });
   }
 };
