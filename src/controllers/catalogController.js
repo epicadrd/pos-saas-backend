@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { Product, Tenant } from "../models/index.js";
 
 const buildCatalogUrl = (token) => {
-  const appUrl = "https://app.corexrd.com";
+  const appUrl = process.env.APP_URL || "https://app.aventrard.com";
   return `${appUrl.replace(/\/$/, "")}/catalogo/${token}`;
 };
 
