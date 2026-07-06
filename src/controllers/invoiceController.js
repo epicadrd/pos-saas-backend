@@ -344,7 +344,12 @@ export const createInvoice = async (req, res) => {
 
     const subtotal = roundMoney(normalizedItems.reduce((acc, i) => acc + Number(i.subtotal || 0), 0));
     const tax = roundMoney(normalizedItems.reduce((acc, i) => acc + Number(i.tax || 0), 0));
-    const total = roundMoney(subtotal + tax);
+    const applyRetentions = req.body.applyRetentions === true;
+    const itbisRetention = applyRetentions ? roundMoney(tax) : 0;
+    const isrRetention = applyRetentions ? roundMoney(subtotal * 0.15) : 0;
+    const totalRetentions = roundMoney(itbisRetention + isrRetention);
+
+    const total = roundMoney(subtotal + tax - totalRetentions);
     const paid = isDraft ? 0 : sanitizeNumber(amountPaid);
 
     if (paid < 0) throw new Error("El monto pagado no puede ser negativo");
@@ -369,9 +374,13 @@ export const createInvoice = async (req, res) => {
         customerEmail,
         subtotal,
         tax,
+        applyRetentions,
+        itbisRetention,
+        isrRetention,
+        totalRetentions,
         total,
         amountPaid: paid,
-        balance: total - paid,
+        balance: roundMoney(total - paid),
         status: finalStatus,
         stockAlreadyMoved: false,
         invoiceDate,
@@ -498,7 +507,13 @@ export const updateDraftInvoice = async (req, res) => {
 
     const subtotal = roundMoney(normalizedItems.reduce((acc, item) => acc + Number(item.subtotal || 0), 0));
     const tax = roundMoney(normalizedItems.reduce((acc, item) => acc + Number(item.tax || 0), 0));
-    const total = roundMoney(subtotal + tax);
+    const applyRetentions = req.body.applyRetentions === true;
+
+    const itbisRetention = applyRetentions ? roundMoney(tax) : 0;
+    const isrRetention = applyRetentions ? roundMoney(subtotal * 0.15) : 0;
+    const totalRetentions = roundMoney(itbisRetention + isrRetention);
+
+    const total = roundMoney(subtotal + tax - totalRetentions);
 
     await invoice.update(
       {
@@ -509,6 +524,10 @@ export const updateDraftInvoice = async (req, res) => {
         invoiceType,
         subtotal,
         tax,
+        applyRetentions,
+        itbisRetention,
+        isrRetention,
+        totalRetentions,
         total,
         amountPaid: 0,
         balance: total,

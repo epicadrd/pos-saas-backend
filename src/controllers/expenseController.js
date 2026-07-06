@@ -579,48 +579,76 @@ export const getExpenseStats = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
 
+    const from = sanitizeString(req.query.from || "", 20);
+const to = sanitizeString(req.query.to || "", 20);
+
     const start = new Date();
     start.setDate(1);
     start.setHours(0, 0, 0, 0);
 
-    const [monthTotal, pendingTotal, byCategory] = await Promise.all([
-      Expense.sum("total", {
-        where: {
-          tenantId,
-          status: "paid",
-          expenseDate: {
-            [Op.gte]: start,
-          },
-        },
-      }),
+    const dateWhere = {};
 
-      Expense.sum("total", {
-        where: {
-          tenantId,
-          status: "pending",
-        },
-      }),
+    if (from || to) {
+      if (from) dateWhere[Op.gte] = from;
+      if (to) dateWhere[Op.lte] = to;
+    } else {
+      dateWhere[Op.gte] = start;
+    }
 
-      Expense.findAll({
-        where: {
-          tenantId,
-          status: {
-            [Op.ne]: "cancelled",
+    const [monthTotal, monthTaxTotal, pendingTotal, byCategory] =
+      await Promise.all([
+        Expense.sum("total", {
+          where: {
+            tenantId,
+            status: "paid",
+            expenseDate: dateWhere,
           },
-          expenseDate: {
-            [Op.gte]: start,
+        }),
+
+        Expense.sum("tax", {
+          where: {
+            tenantId,
+            status: "paid",
+            expenseDate: dateWhere,
           },
-        },
-        attributes: ["category", [fn("SUM", col("total")), "total"]],
-        group: ["category"],
-        raw: true,
-      }),
-    ]);
+        }),
+
+        Expense.sum("total", {
+          where: {
+            tenantId,
+            status: "pending",
+          },
+        }),
+
+        Expense.findAll({
+          where: {
+            tenantId,
+            status: {
+              [Op.ne]: "cancelled",
+            },
+            expenseDate: dateWhere,
+          },
+          attributes: [
+            "category",
+            [fn("SUM", col("total")), "total"],
+            [fn("SUM", col("tax")), "tax"],
+          ],
+          group: ["category"],
+          raw: true,
+        }),
+      ]);
 
     res.json({
-      monthTotal: money(monthTotal),
+      monthTotal: Math.max(money(monthTotal) - money(monthTaxTotal), 0),
+      monthGrossTotal: money(monthTotal),
+      monthTaxTotal: money(monthTaxTotal),
       pendingTotal: money(pendingTotal),
-      byCategory,
+      byCategory: byCategory.map((item) => ({
+        ...item,
+        total: Math.max(money(item.total) - money(item.tax), 0),
+        grossTotal: money(item.total),
+        tax: money(item.tax),
+      })),
     });
   } catch (error) {
     console.log("EXPENSE STATS ERROR:", error);

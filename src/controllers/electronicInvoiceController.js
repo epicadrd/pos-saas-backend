@@ -141,13 +141,25 @@ export const emitElectronicInvoice = async (req, res) => {
       });
     }
 
-    const tenant = await Tenant.findByPk(tenantId);
+   const tenant = await Tenant.findByPk(tenantId);
 
-    if (!tenant?.rnc) {
+    if (tenant?.country !== "DO") {
       return res.status(400).json({
-        message: "La empresa no tiene RNC configurado",
+        message: "La facturación electrónica solo aplica para República Dominicana",
       });
     }
+
+    if (tenant?.electronicInvoicingEnabled === false) {
+      return res.status(400).json({
+        message: "La facturación electrónica está desactivada para esta empresa",
+      });
+    }
+
+    if (!tenant?.rnc) {
+          return res.status(400).json({
+            message: "La empresa no tiene RNC configurado",
+          });
+        }
 
     const tipoeCF = req.body?.tipoeCF || "31";
     invoice.tipoeCF = tipoeCF;

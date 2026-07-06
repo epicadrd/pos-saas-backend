@@ -416,6 +416,7 @@ export const updateTenant = async (req, res) => {
     const invoiceTaxMode = req.body.invoiceTaxMode;
     const invoiceTaxRate = req.body.invoiceTaxRate;
     const country = req.body.country;
+    const electronicInvoicingEnabled = req.body.electronicInvoicingEnabled;
     const usStateTaxRate = req.body.usStateTaxRate;
     const usCountyTaxRate = req.body.usCountyTaxRate;
     const usCityTaxRate = req.body.usCityTaxRate;
@@ -448,6 +449,8 @@ export const updateTenant = async (req, res) => {
     invoiceTaxRate: tenant.invoiceTaxRate,
     invoiceNextNumber: tenant.invoiceNextNumber,
     invoiceDigits: tenant.invoiceDigits,
+    country: tenant.country,
+    electronicInvoicingEnabled: tenant.electronicInvoicingEnabled,
   };
 
     await tenant.update({
@@ -463,6 +466,10 @@ export const updateTenant = async (req, res) => {
       invoiceTaxMode:  invoiceTaxMode === "line" || invoiceTaxMode === "global" ? invoiceTaxMode : tenant.invoiceTaxMode,
       invoiceTaxRate: invoiceTaxRate !== undefined && Number(invoiceTaxRate) >= 0 ? Number(invoiceTaxRate) : tenant.invoiceTaxRate,
       country: country === "US" || country === "DO" ? country : tenant.country,
+      electronicInvoicingEnabled:
+  typeof electronicInvoicingEnabled === "boolean"
+    ? electronicInvoicingEnabled
+    : tenant.electronicInvoicingEnabled,
       usStateTaxRate:
         usStateTaxRate !== undefined && Number(usStateTaxRate) >= 0
           ? Number(usStateTaxRate)
@@ -503,6 +510,8 @@ export const updateTenant = async (req, res) => {
           invoiceTaxRate: tenant.invoiceTaxRate,
           invoiceNextNumber: tenant.invoiceNextNumber,
           invoiceDigits: tenant.invoiceDigits,
+          country: tenant.country,
+          electronicInvoicingEnabled: tenant.electronicInvoicingEnabled,
         },
       },
     });

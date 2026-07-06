@@ -34,13 +34,35 @@ const generateInvoiceNumber = (tenant) => {
   return `${prefix}-${String(nextNumber).padStart(digits, "0")}`;
 };
 
+const getTodayDateOnly = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeDateOnly = (value) => {
+  if (!value) return null;
+  return String(value).slice(0, 10);
+};
+
+
 const getEffectiveStatus = (quote) => {
+  const validUntil = normalizeDateOnly(quote.validUntil);
+
+  if (!validUntil) {
+    return quote.status;
+  }
+
+  const today = getTodayDateOnly();
+
   if (
     quote.status !== "converted" &&
     quote.status !== "approved" &&
     quote.status !== "rejected" &&
-    quote.validUntil &&
-    new Date(quote.validUntil) < new Date(new Date().toDateString())
+    validUntil < today
   ) {
     return "expired";
   }
@@ -63,7 +85,7 @@ const normalizeQuoteItems = async ({ items, tenantId, taxConfig = {}, transactio
       throw new Error("El descuento debe estar entre 0 y 100");
     }
 
-    let product = null;
+    let product = null
 
     if (productId) {
       product = await Product.findOne({

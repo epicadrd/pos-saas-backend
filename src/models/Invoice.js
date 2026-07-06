@@ -93,6 +93,30 @@ export const Invoice = sequelize.define("Invoice", {
     defaultValue: 0,
   },
 
+    applyRetentions: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+
+  itbisRetention: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: false,
+    defaultValue: 0,
+  },
+
+  isrRetention: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: false,
+    defaultValue: 0,
+  },
+
+  totalRetentions: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: false,
+    defaultValue: 0,
+  },
+
   total: {
     type: DataTypes.DECIMAL(12, 2),
     allowNull: false,

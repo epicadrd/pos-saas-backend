@@ -84,6 +84,12 @@ country: {
   defaultValue: "DO",
 },
 
+electronicInvoicingEnabled: {
+  type: DataTypes.BOOLEAN,
+  allowNull: false,
+  defaultValue: true,
+},
+
 usStateTaxRate: {
   type: DataTypes.DECIMAL(5, 2),
   allowNull: false,
