@@ -1,5 +1,6 @@
 import { Tenant, User, CashRegister } from "../models/index.js";
 import { getPlanConfig, planHasFeature } from "../config/plans.js";
+import { tenantHasFeatureOverride } from "./featureOverrideMiddleware.js";
 
 export const loadTenantPlan = async (req, res, next) => {
   try {
@@ -34,7 +35,7 @@ export const requirePlanFeature = (feature) => {
         });
       }
 
-      if (!planHasFeature(tenant.plan, feature)) {
+      if (!planHasFeature(tenant.plan, feature) && !tenantHasFeatureOverride(tenant.id, feature)) {
         return res.status(403).json({
           code: "PLAN_FEATURE_BLOCKED",
           feature,

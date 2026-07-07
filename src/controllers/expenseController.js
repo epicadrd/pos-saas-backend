@@ -580,7 +580,7 @@ export const getExpenseStats = async (req, res) => {
     const tenantId = req.user.tenantId;
 
     const from = sanitizeString(req.query.from || "", 20);
-const to = sanitizeString(req.query.to || "", 20);
+    const to = sanitizeString(req.query.to || "", 20);
 
     const start = new Date();
     start.setDate(1);
@@ -595,38 +595,40 @@ const to = sanitizeString(req.query.to || "", 20);
       dateWhere[Op.gte] = start;
     }
 
+    const baseWhere = {
+      tenantId,
+      expenseDate: dateWhere,
+    };
+
     const [monthTotal, monthTaxTotal, pendingTotal, byCategory] =
       await Promise.all([
         Expense.sum("total", {
           where: {
-            tenantId,
+            ...baseWhere,
             status: "paid",
-            expenseDate: dateWhere,
           },
         }),
 
         Expense.sum("tax", {
           where: {
-            tenantId,
+            ...baseWhere,
             status: "paid",
-            expenseDate: dateWhere,
           },
         }),
 
         Expense.sum("total", {
           where: {
-            tenantId,
+            ...baseWhere,
             status: "pending",
           },
         }),
 
         Expense.findAll({
           where: {
-            tenantId,
+            ...baseWhere,
             status: {
               [Op.ne]: "cancelled",
             },
-            expenseDate: dateWhere,
           },
           attributes: [
             "category",
