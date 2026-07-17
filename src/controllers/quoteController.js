@@ -70,8 +70,46 @@ const getEffectiveStatus = (quote) => {
   return quote.status;
 };
 
-const normalizeQuoteItems = async ({ items, tenantId, taxConfig = {}, transaction }) => {
+const roundMoney = (value) =>
+  Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+const getQuoteTaxRate = (taxConfig = {}) => {
+  const country = String(taxConfig.country || "DO").toUpperCase();
+
+  if (country === "US") {
+    return roundMoney(
+      Number(taxConfig.usStateTaxRate || 0) +
+      Number(taxConfig.usCountyTaxRate || 0) +
+      Number(taxConfig.usCityTaxRate || 0)
+    );
+  }
+
+  const configuredRate = taxConfig.invoiceTaxRate;
+
+  // Evita que null o "" se conviertan incorrectamente en 0.
+  if (
+    configuredRate === null ||
+    configuredRate === undefined ||
+    configuredRate === ""
+  ) {
+    return 18;
+  }
+
+  const parsedRate = Number(configuredRate);
+
+  return Number.isFinite(parsedRate) && parsedRate >= 0
+    ? parsedRate
+    : 18;
+};
+
+const normalizeQuoteItems = async ({
+  items,
+  tenantId,
+  taxConfig = {},
+  transaction,
+}) => {
   const normalizedItems = [];
+  const defaultTaxRate = getQuoteTaxRate(taxConfig);
 
   for (const item of items) {
     const productId = item.productId || item.id || null;
@@ -79,22 +117,34 @@ const normalizeQuoteItems = async ({ items, tenantId, taxConfig = {}, transactio
     const price = sanitizeNumber(item.price ?? item.unitPrice, 0);
     const discount = sanitizeNumber(item.discount, 0);
 
-    if (quantity <= 0) throw new Error("La cantidad debe ser mayor a cero");
-    if (price < 0) throw new Error("El precio no puede ser negativo");
+    if (quantity <= 0) {
+      throw new Error("La cantidad debe ser mayor a cero");
+    }
+
+    if (price < 0) {
+      throw new Error("El precio no puede ser negativo");
+    }
+
     if (discount < 0 || discount > 100) {
       throw new Error("El descuento debe estar entre 0 y 100");
     }
 
-    let product = null
+    let product = null;
 
     if (productId) {
       product = await Product.findOne({
-        where: { id: productId, tenantId, isActive: true },
+        where: {
+          id: productId,
+          tenantId,
+          isActive: true,
+        },
         transaction,
       });
 
       if (!product) {
-        throw new Error("Producto no encontrado o no pertenece a esta empresa");
+        throw new Error(
+          "Producto no encontrado o no pertenece a esta empresa"
+        );
       }
     }
 
@@ -104,33 +154,40 @@ const normalizeQuoteItems = async ({ items, tenantId, taxConfig = {}, transactio
       throw new Error("El nombre del producto es obligatorio");
     }
 
-    const grossSubtotal = quantity * price;
-    const discountAmount = grossSubtotal * (discount / 100);
-    const subtotal = Math.max(grossSubtotal - discountAmount, 0);
-
-    const taxEnabled = taxConfig.invoiceTaxEnabled !== false;
-    const taxMode = taxConfig.invoiceTaxMode || "global";
-    const defaultTaxRate = sanitizeNumber(
-      taxConfig.invoiceTaxRate,
-      18
+    const grossSubtotal = roundMoney(quantity * price);
+    const discountAmount = roundMoney(
+      grossSubtotal * (discount / 100)
+    );
+    const subtotal = roundMoney(
+      Math.max(grossSubtotal - discountAmount, 0)
     );
 
+    // Acepta correctamente booleanos y valores 1/0 provenientes de MySQL.
     const isTaxable =
-      taxEnabled && (taxMode === "global" ? true : item.isTaxable !== false);
+      item.isTaxable === true ||
+      item.isTaxable === 1 ||
+      item.isTaxable === "1" ||
+      item.isTaxable === "true";
 
     const taxRate = isTaxable ? defaultTaxRate : 0;
-    const tax = subtotal * (taxRate / 100);
-    const total = subtotal + tax;
+    const tax = isTaxable
+      ? roundMoney(subtotal * (taxRate / 100))
+      : 0;
+
+    const total = roundMoney(subtotal + tax);
 
     normalizedItems.push({
       product,
       productId: product?.id || null,
       productName: productName.trim(),
       description:
-      sanitizeString(item.description || product?.description || "",1000) || null,
+        sanitizeString(
+          item.description || product?.description || "",
+          1000
+        ) || null,
       quantity,
-      price,
-      discount,
+      price: roundMoney(price),
+      discount: roundMoney(discount),
       subtotal,
       tax,
       isTaxable,
@@ -143,11 +200,27 @@ const normalizeQuoteItems = async ({ items, tenantId, taxConfig = {}, transactio
 };
 
 const sumTotals = (items) => {
-  const subtotal = items.reduce((acc, item) => acc + Number(item.subtotal || 0), 0);
-  const tax = items.reduce((acc, item) => acc + Number(item.tax || 0), 0);
-  const total = items.reduce((acc, item) => acc + Number(item.total || 0), 0);
+  const subtotal = roundMoney(
+    items.reduce(
+      (acc, item) => acc + Number(item.subtotal || 0),
+      0
+    )
+  );
 
-  return { subtotal, tax, total };
+  const tax = roundMoney(
+    items.reduce(
+      (acc, item) => acc + Number(item.tax || 0),
+      0
+    )
+  );
+
+  const total = roundMoney(subtotal + tax);
+
+  return {
+    subtotal,
+    tax,
+    total,
+  };
 };
 
 export const getQuotes = async (req, res) => {

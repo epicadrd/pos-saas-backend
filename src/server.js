@@ -37,6 +37,7 @@ import catalogRoutes from "./routes/catalogRoutes.js";
 import posRoutes from "./routes/posRoutes.js";
 
 import electronicInvoiceRoutes from "./routes/electronicInvoiceRoutes.js";
+import electronicInvoicingRequestRoutes from "./routes/electronicInvoicingRequestRoutes.js";
 
 dotenv.config();
 
@@ -148,6 +149,10 @@ app.use("/api/billing", billingRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/inventory-counts", inventoryCountRoutes);
 app.use("/api/invoices", invoiceRoutes);
+app.use(
+  "/api/electronic-invoicing",
+  electronicInvoicingRequestRoutes
+);
 app.use("/api/electronic-invoices", electronicInvoiceRoutes);
 app.use("/api/quotes", quoteRoutes);
 app.use("/api/delivery-notes", deliveryNoteRoutes);

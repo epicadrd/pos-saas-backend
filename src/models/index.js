@@ -26,6 +26,7 @@ import { PosSale } from "./PosSale.js";
 import { PosSaleItem } from "./PosSaleItem.js";
 import { CashRegisterUser } from "./CashRegisterUser.js";
 import { ElectronicInvoice } from "./ElectronicInvoice.js";
+import { ElectronicInvoicingRequest } from "./ElectronicInvoicingRequest.js";
 
 Invoice.belongsTo(User, {
   foreignKey: "createdBy",
@@ -133,6 +134,17 @@ PosSale.hasMany(PosSaleItem, { foreignKey: "posSaleId", as: "items" });
 PosSaleItem.belongsTo(PosSale, { foreignKey: "posSaleId", as: "sale" });
 PosSaleItem.belongsTo(Product, { foreignKey: "productId", as: "product" });
 
+Tenant.hasOne(ElectronicInvoicingRequest, {
+  foreignKey: "tenantId",
+  as: "electronicInvoicingRequest",
+  onDelete: "CASCADE",
+});
+
+ElectronicInvoicingRequest.belongsTo(Tenant, {
+  foreignKey: "tenantId",
+  as: "tenant",
+});
+
 export {
   sequelize,
   Tenant,
@@ -142,6 +154,7 @@ export {
   Invoice,
   InvoiceItem,
   ElectronicInvoice,
+  ElectronicInvoicingRequest,
   Quote,
   QuoteItem,
   DeliveryNote,
