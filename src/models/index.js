@@ -27,6 +27,7 @@ import { PosSaleItem } from "./PosSaleItem.js";
 import { CashRegisterUser } from "./CashRegisterUser.js";
 import { ElectronicInvoice } from "./ElectronicInvoice.js";
 import { ElectronicInvoicingRequest } from "./ElectronicInvoicingRequest.js";
+import { TenantMSellerCredential } from "./TenantMSellerCredential.js";
 
 Invoice.belongsTo(User, {
   foreignKey: "createdBy",
@@ -145,6 +146,17 @@ ElectronicInvoicingRequest.belongsTo(Tenant, {
   as: "tenant",
 });
 
+Tenant.hasOne(TenantMSellerCredential, {
+  foreignKey: "tenantId",
+  as: "msellerCredential",
+  onDelete: "CASCADE",
+});
+
+TenantMSellerCredential.belongsTo(Tenant, {
+  foreignKey: "tenantId",
+  as: "tenant",
+});
+
 export {
   sequelize,
   Tenant,
@@ -155,6 +167,7 @@ export {
   InvoiceItem,
   ElectronicInvoice,
   ElectronicInvoicingRequest,
+  TenantMSellerCredential,
   Quote,
   QuoteItem,
   DeliveryNote,

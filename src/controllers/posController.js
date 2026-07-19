@@ -642,7 +642,7 @@ export const createPosSale = async (req, res) => {
         include: [{ model: PosSaleItem, as: "items" }],
       });
 
-     const tenantForECF = await Tenant.findByPk(tenantId, {
+      const tenantForECF = await Tenant.findByPk(tenantId, {
         attributes: [
           "businessName",
           "legalName",
@@ -651,9 +651,15 @@ export const createPosSale = async (req, res) => {
           "email",
           "address",
           "country",
+          "electronicInvoicingEnabled",
         ],
       });
-      if (tenantForECF?.country === "DO" && tenantForECF?.rnc && createdSale) {
+      if (
+        tenantForECF?.electronicInvoicingEnabled === true &&
+        tenantForECF?.country === "DO" &&
+        tenantForECF?.rnc &&
+        createdSale
+      ) {
         const tipoeCF = getPosTipoECF(createdSale.receiptType);
 
         const eNcf =
@@ -667,7 +673,10 @@ export const createPosSale = async (req, res) => {
           eNcf,
         });
 
-        const ecfResult = await sendECFToMSeller(payload);
+        const ecfResult = await sendECFToMSeller(
+          tenantId,
+          payload
+        );
 
         await createdSale.update({
           dgiiQrUrl: ecfResult.qr_url || null,

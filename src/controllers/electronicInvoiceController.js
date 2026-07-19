@@ -175,12 +175,15 @@ export const emitElectronicInvoice = async (req, res) => {
       eNcf,
     });
 
-    const result = await sendECFToMSeller(payload);
+    const result = await sendECFToMSeller(
+      tenantId,
+      payload
+    );
 
     const electronicInvoice = await ElectronicInvoice.create({
       tenantId,
       invoiceId: invoice.id,
-      environment: getMSellerEnvironment(),
+      environment: await getMSellerEnvironment(tenantId),
       documentType: result.documentType || null,
       eNcf: result.ecf || result.ncf || eNcf,
       internalTrackId: result.internalTrackId || null,
@@ -229,8 +232,7 @@ export const syncElectronicInvoiceStatus = async (req, res) => {
       });
     }
 
-    const result = await getECFStatusFromMSeller(electronicInvoice.eNcf);
-
+    const result = await getECFStatusFromMSeller(tenantId, electronicInvoice.eNcf);
     await electronicInvoice.update({
       status: result.status || electronicInvoice.status,
       dgiiResponse: result.dgiiResponse || electronicInvoice.dgiiResponse,
