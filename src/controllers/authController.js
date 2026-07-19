@@ -1,6 +1,10 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { Tenant, User } from "../models/index.js";
+import {
+  Tenant,
+  User,
+  ElectronicInvoicingRequest,
+} from "../models/index.js";
 import {
   clearLoginFailures,
   registerLoginFailure,
@@ -436,6 +440,32 @@ export const updateTenant = async (req, res) => {
         message: "Empresa no encontrada",
       });
     }
+
+    let resolvedElectronicInvoicingEnabled =
+  tenant.electronicInvoicingEnabled === true;
+
+  if (typeof electronicInvoicingEnabled === "boolean") {
+    if (electronicInvoicingEnabled === true) {
+      const activeEcfRequest =
+        await ElectronicInvoicingRequest.findOne({
+          where: {
+            tenantId,
+            status: "active",
+          },
+          attributes: ["id", "status"],
+        });
+
+      if (!activeEcfRequest) {
+        return res.status(403).json({
+          message:
+            "La facturación electrónica todavía no ha sido habilitada para esta empresa.",
+        });
+      }
+    }
+
+    resolvedElectronicInvoicingEnabled =
+      electronicInvoicingEnabled;
+  }
     const previousTenantData = {
     businessName: tenant.businessName,
     email: tenant.email,
@@ -467,9 +497,7 @@ export const updateTenant = async (req, res) => {
       invoiceTaxRate: invoiceTaxRate !== undefined && Number(invoiceTaxRate) >= 0 ? Number(invoiceTaxRate) : tenant.invoiceTaxRate,
       country: country === "US" || country === "DO" ? country : tenant.country,
       electronicInvoicingEnabled:
-  typeof electronicInvoicingEnabled === "boolean"
-    ? electronicInvoicingEnabled
-    : tenant.electronicInvoicingEnabled,
+       resolvedElectronicInvoicingEnabled,
       usStateTaxRate:
         usStateTaxRate !== undefined && Number(usStateTaxRate) >= 0
           ? Number(usStateTaxRate)

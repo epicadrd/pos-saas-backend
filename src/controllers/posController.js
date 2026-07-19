@@ -10,6 +10,7 @@ import {
   StockMovement,
   User,
   Tenant,
+  ElectronicInvoicingRequest,
 } from "../models/index.js";
 import { sanitizeString, sanitizeNumber, sanitizeInteger } from "../utils/sanitize.js";
 import { sendECFToMSeller,} from "../services/msellerService.js";
@@ -654,7 +655,18 @@ export const createPosSale = async (req, res) => {
           "electronicInvoicingEnabled",
         ],
       });
+
+      const activeEcfRequest =
+        await ElectronicInvoicingRequest.findOne({
+          where: {
+            tenantId,
+            status: "active",
+          },
+          attributes: ["id", "status"],
+        });
+
       if (
+        activeEcfRequest &&
         tenantForECF?.electronicInvoicingEnabled === true &&
         tenantForECF?.country === "DO" &&
         tenantForECF?.rnc &&

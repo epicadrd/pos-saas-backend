@@ -3,6 +3,7 @@ import {
   InvoiceItem,
   Tenant,
   ElectronicInvoice,
+  ElectronicInvoicingRequest,
 } from "../models/index.js";
 import {
   sendECFToMSeller,
@@ -149,11 +150,28 @@ export const emitElectronicInvoice = async (req, res) => {
       });
     }
 
-    if (tenant?.electronicInvoicingEnabled === false) {
-      return res.status(400).json({
-        message: "La facturación electrónica está desactivada para esta empresa",
-      });
-    }
+    const activeEcfRequest =
+  await ElectronicInvoicingRequest.findOne({
+    where: {
+      tenantId,
+      status: "active",
+    },
+    attributes: ["id", "status"],
+  });
+
+if (!activeEcfRequest) {
+  return res.status(403).json({
+    message:
+      "La solicitud de facturación electrónica de esta empresa todavía no ha sido aceptada.",
+  });
+}
+
+if (tenant?.electronicInvoicingEnabled !== true) {
+  return res.status(403).json({
+    message:
+      "La facturación electrónica está desactivada para esta empresa.",
+  });
+}
 
     if (!tenant?.rnc) {
           return res.status(400).json({
