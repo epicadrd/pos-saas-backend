@@ -8,12 +8,20 @@ import {
   deleteExpense,
   getExpenseStats,
   importExpenseFromDgii,
+  exportMonthlyExpenses,
 } from "../controllers/expenseController.js";
 
 const router = express.Router();
 
 router.get("/", protect, requireActiveSubscription, requireRole("master", "admin"), getExpenses);
 router.get("/stats", protect, requireActiveSubscription, requireRole("master", "admin"), getExpenseStats);
+router.get(
+  "/export",
+  protect,
+  requireActiveSubscription,
+  requireRole("master", "admin"),
+  exportMonthlyExpenses
+);
 router.post("/", protect, requireActiveSubscription, requireRole("master", "admin"), createExpense);
 router.post("/import-dgii", protect, requireActiveSubscription, requireRole("master", "admin"), importExpenseFromDgii);
 router.put("/:id", protect, requireActiveSubscription, requireRole("master", "admin"), updateExpense);

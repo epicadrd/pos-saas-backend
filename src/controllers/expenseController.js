@@ -6,8 +6,47 @@ import {
   sanitizeNumber,
   sanitizeInteger,
 } from "../utils/sanitize.js";
+import ExcelJS from "exceljs";
 
 const money = (value) => Number(value || 0);
+const SPANISH_MONTHS = [
+  "ENERO",
+  "FEBRERO",
+  "MARZO",
+  "ABRIL",
+  "MAYO",
+  "JUNIO",
+  "JULIO",
+  "AGOSTO",
+  "SEPTIEMBRE",
+  "OCTUBRE",
+  "NOVIEMBRE",
+  "DICIEMBRE",
+];
+
+const EXPENSE_EXPORT_HEADERS = [
+  "RNC",
+  "CONCEPTO",
+  "NCF",
+  "MONTO FACTURADO",
+  "ITBIS",
+  "Monto Retención Renta",
+  "ITBIS RETENIDO",
+  "MONTO PROPINA LEGAL",
+  "ISC",
+  "OTROS IMPUESTOS",
+  "FECHA",
+  "METODO DE PAGO",
+];
+
+const PAYMENT_METHOD_EXPORT_LABELS = {
+  cash: "EFECTIVO",
+  card: "TARJETA",
+  transfer: "TRANSFERENCIA",
+  check: "CHEQUE",
+  credit: "CRÉDITO",
+  other: "OTRO",
+};
 
 const decodeHtml = (text = "") =>
   text
@@ -205,6 +244,337 @@ export const getExpenses = async (req, res) => {
 
     res.status(500).json({
       message: "Error obteniendo gastos",
+    });
+  }
+};
+
+export const exportMonthlyExpenses = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const currentDate = new Date();
+
+    const defaultMonth = `${currentDate.getFullYear()}-${String(
+      currentDate.getMonth() + 1
+    ).padStart(2, "0")}`;
+
+    const monthValue = sanitizeString(
+      req.query.month || defaultMonth,
+      7
+    );
+
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthValue)) {
+      return res.status(400).json({
+        message: "El mes indicado no es válido",
+      });
+    }
+
+    const [yearText, monthText] = monthValue.split("-");
+    const year = Number(yearText);
+    const month = Number(monthText);
+
+    const lastDay = new Date(year, month, 0).getDate();
+
+    const from = `${yearText}-${monthText}-01`;
+
+    const to = `${yearText}-${monthText}-${String(
+      lastDay
+    ).padStart(2, "0")}`;
+
+    const expenses = await Expense.findAll({
+      where: {
+        tenantId,
+
+        expenseDate: {
+          [Op.between]: [from, to],
+        },
+
+        status: {
+          [Op.ne]: "cancelled",
+        },
+      },
+
+      include: [
+        {
+          model: Supplier,
+          as: "supplier",
+          where: { tenantId },
+          required: false,
+          attributes: ["id", "name", "rnc"],
+        },
+      ],
+
+      order: [
+        ["expenseDate", "ASC"],
+        ["createdAt", "ASC"],
+      ],
+    });
+
+    const workbook = new ExcelJS.Workbook();
+
+    workbook.creator = "Aventra";
+    workbook.company = "ÉPICA SRL";
+    workbook.created = new Date();
+
+    const monthName = SPANISH_MONTHS[month - 1];
+    const sheetName = `606 ${monthName} ${year}`;
+
+    const worksheet = workbook.addWorksheet(
+      sheetName,
+      {
+        views: [
+          {
+            state: "frozen",
+            ySplit: 1,
+          },
+        ],
+
+        pageSetup: {
+          orientation: "landscape",
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+        },
+      }
+    );
+
+    worksheet.columns = [
+      { key: "rnc", width: 18 },
+      { key: "concept", width: 32 },
+      { key: "ncf", width: 24 },
+      { key: "total", width: 18 },
+      { key: "tax", width: 14 },
+      { key: "incomeTaxWithholding", width: 20 },
+      { key: "itbisWithheld", width: 18 },
+      { key: "legalTip", width: 20 },
+      { key: "isc", width: 12 },
+      { key: "otherTaxes", width: 18 },
+      { key: "day", width: 12 },
+      { key: "paymentMethod", width: 20 },
+    ];
+
+    const headerRow = worksheet.addRow(
+      EXPENSE_EXPORT_HEADERS
+    );
+
+    headerRow.height = 32;
+
+    headerRow.eachCell((cell) => {
+      cell.font = {
+        name: "Roboto",
+        size: 10,
+        bold: true,
+        color: {
+          argb: "FFFFFFFF",
+        },
+      };
+
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: {
+          argb: "FF356854",
+        },
+      };
+
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+        wrapText: true,
+      };
+
+      cell.border = {
+        top: {
+          style: "thin",
+          color: { argb: "FF356854" },
+        },
+        bottom: {
+          style: "thin",
+          color: { argb: "FF356854" },
+        },
+        left: {
+          style: "thin",
+          color: { argb: "FF356854" },
+        },
+        right: {
+          style: "thin",
+          color: { argb: "FF356854" },
+        },
+      };
+    });
+
+    expenses.forEach((expense, index) => {
+      const expenseDate = String(
+        expense.expenseDate || ""
+      );
+
+      const day =
+        Number(expenseDate.slice(8, 10)) || null;
+
+      const supplierRnc =
+        expense.supplier?.rnc ||
+        expense.supplierRnc ||
+        "";
+
+      const concept =
+        expense.description ||
+        expense.category ||
+        "";
+
+      const row = worksheet.addRow([
+        String(supplierRnc),
+        concept,
+        expense.ncf || "",
+        money(expense.total),
+        money(expense.tax),
+
+        // Aventra todavía no almacena estos campos.
+        null, // Retención de renta
+        null, // ITBIS retenido
+        null, // Propina legal
+        null, // ISC
+        null, // Otros impuestos
+
+        day,
+
+        PAYMENT_METHOD_EXPORT_LABELS[
+          expense.paymentMethod
+        ] || "OTRO",
+      ]);
+
+      const backgroundColor =
+        index % 2 === 0
+          ? "FFFFFFFF"
+          : "FFF6F8F9";
+
+      row.height = 22;
+
+      row.eachCell(
+        { includeEmpty: true },
+        (cell, columnNumber) => {
+          cell.font = {
+            name: "Roboto",
+            size: 10,
+            color: {
+              argb: "FF434343",
+            },
+          };
+
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: {
+              argb: backgroundColor,
+            },
+          };
+
+          cell.alignment = {
+            vertical: "middle",
+
+            horizontal: [
+              4, 5, 6, 7, 8, 9, 10, 11,
+            ].includes(columnNumber)
+              ? "center"
+              : "left",
+          };
+
+          cell.border = {
+            top: {
+              style: "thin",
+              color: {
+                argb: backgroundColor,
+              },
+            },
+
+            bottom: {
+              style: "thin",
+              color: {
+                argb: backgroundColor,
+              },
+            },
+
+            left: {
+              style: "thin",
+              color: {
+                argb:
+                  columnNumber === 1
+                    ? "FF356854"
+                    : backgroundColor,
+              },
+            },
+
+            right: {
+              style: "thin",
+              color: {
+                argb:
+                  columnNumber === 12
+                    ? "FF356854"
+                    : backgroundColor,
+              },
+            },
+          };
+        }
+      );
+
+      // RNC y NCF como texto para no perder ceros.
+      row.getCell(1).numFmt = "@";
+      row.getCell(3).numFmt = "@";
+
+      // Valores monetarios reales.
+      row.getCell(4).numFmt = "#,##0.00";
+      row.getCell(5).numFmt = "#,##0.00";
+
+      // La plantilla utiliza únicamente el día del mes.
+      row.getCell(11).numFmt = "0";
+    });
+
+    const lastRowNumber = Math.max(
+      worksheet.rowCount,
+      1
+    );
+
+    worksheet.autoFilter = {
+      from: {
+        row: 1,
+        column: 1,
+      },
+
+      to: {
+        row: lastRowNumber,
+        column: 12,
+      },
+    };
+
+    const buffer =
+      await workbook.xlsx.writeBuffer();
+
+    const fileName =
+      `606 GASTOS ${monthName} ${year}.xlsx`;
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${fileName}"`
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    return res.send(Buffer.from(buffer));
+  } catch (error) {
+    console.log(
+      "EXPORT EXPENSES ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "No se pudo exportar el archivo de gastos",
     });
   }
 };
