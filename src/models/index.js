@@ -2,6 +2,7 @@ import { sequelize } from "../config/database.js";
 import { Tenant } from "./Tenant.js";
 import { User } from "./User.js";
 import { Product } from "./Product.js";
+import { ProductCatalogImage } from "./ProductCatalogImage.js";
 import { StockMovement } from "./StockMovement.js";
 import { Invoice } from "./Invoice.js";
 import { InvoiceItem } from "./InvoiceItem.js";
@@ -135,6 +136,19 @@ PosSale.hasMany(PosSaleItem, { foreignKey: "posSaleId", as: "items" });
 PosSaleItem.belongsTo(PosSale, { foreignKey: "posSaleId", as: "sale" });
 PosSaleItem.belongsTo(Product, { foreignKey: "productId", as: "product" });
 
+Product.hasMany(ProductCatalogImage, {
+  foreignKey: "productId",
+  as: "catalogImages",
+  onDelete: "CASCADE",
+});
+ProductCatalogImage.belongsTo(Product, { foreignKey: "productId", as: "product" });
+Tenant.hasMany(ProductCatalogImage, {
+  foreignKey: "tenantId",
+  as: "productCatalogImages",
+  onDelete: "CASCADE",
+});
+ProductCatalogImage.belongsTo(Tenant, { foreignKey: "tenantId", as: "tenant" });
+
 Tenant.hasOne(ElectronicInvoicingRequest, {
   foreignKey: "tenantId",
   as: "electronicInvoicingRequest",
@@ -162,6 +176,7 @@ export {
   Tenant,
   User,
   Product,
+  ProductCatalogImage,
   StockMovement,
   Invoice,
   InvoiceItem,
