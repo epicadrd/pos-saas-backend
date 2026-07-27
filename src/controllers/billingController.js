@@ -2,10 +2,21 @@ import { stripe } from "../config/stripe.js";
 import { Tenant } from "../models/index.js";
 
 const PLAN_PRICE_MAP = {
-  emprendedor: process.env.STRIPE_PRICE_EMPRENDEDOR,
-  pyme: process.env.STRIPE_PRICE_PYME,
-  empresarial: process.env.STRIPE_PRICE_EMPRESARIAL,
+  emprendedor: {
+    monthly: process.env.STRIPE_PRICE_EMPRENDEDOR,
+    annual: process.env.STRIPE_PRICE_EMPRENDEDOR_ANNUAL,
+  },
+  pyme: {
+    monthly: process.env.STRIPE_PRICE_PYME,
+    annual: process.env.STRIPE_PRICE_PYME_ANNUAL,
+  },
+  empresarial: {
+    monthly: process.env.STRIPE_PRICE_EMPRESARIAL,
+    annual: process.env.STRIPE_PRICE_EMPRESARIAL_ANNUAL,
+  },
 };
+
+const VALID_BILLING_PERIODS = new Set(["monthly", "annual"]);
 
 const getValidStripeCustomerId = async (tenant) => {
   let customerId = tenant.stripeCustomerId;
@@ -47,12 +58,23 @@ const getValidStripeCustomerId = async (tenant) => {
 export const createCheckoutSession = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
-    const { plan } = req.body;
+    const { plan, billingPeriod = "monthly" } = req.body;
 
-    const priceId = PLAN_PRICE_MAP[plan];
+    if (!VALID_BILLING_PERIODS.has(billingPeriod)) {
+      return res.status(400).json({
+        message: "Modalidad de pago inválida",
+      });
+    }
+
+    const priceId = PLAN_PRICE_MAP[plan]?.[billingPeriod];
 
     if (!priceId) {
-      return res.status(400).json({ message: "Plan inválido" });
+      return res.status(400).json({
+        message:
+          billingPeriod === "annual"
+            ? "El precio anual de este plan no está configurado"
+            : "Plan inválido",
+      });
     }
 
     const tenant = await Tenant.findByPk(tenantId);
@@ -78,11 +100,13 @@ export const createCheckoutSession = async (req, res) => {
       metadata: {
         tenantId: String(tenant.id),
         plan,
+        billingPeriod,
       },
       subscription_data: {
         metadata: {
           tenantId: String(tenant.id),
           plan,
+          billingPeriod,
         },
       },
     });
