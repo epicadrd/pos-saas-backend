@@ -41,7 +41,7 @@ const getValidStripeCustomerId = async (tenant) => {
 
   if (!customerId) {
     const customer = await stripe.customers.create({
-      name: tenant.businessName || "Cliente Corex",
+      name: tenant.businessName || "Cliente Aventra",
       email: tenant.email || undefined,
       metadata: {
         tenantId: String(tenant.id),

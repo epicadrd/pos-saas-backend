@@ -91,11 +91,11 @@ const sendVerificationEmail = async (user) => {
 
   await sendBrevoEmail({
     to: user.email,
-    subject: "Confirma tu cuenta en Corex",
+    subject: "Confirma tu cuenta en Aventra",
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;">
         <h2>Confirma tu cuenta</h2>
-        <p>Hola ${user.name}, gracias por registrarte en Corex.</p>
+        <p>Hola ${user.name}, gracias por registrarte en Aventra.</p>
         <p>Haz clic en el siguiente botón para confirmar tu correo y activar tu cuenta.</p>
         <a href="${verifyUrl}" style="display:inline-block;background:#2563eb;color:white;padding:14px 22px;border-radius:10px;text-decoration:none;font-weight:bold;">
           Confirmar cuenta
@@ -659,7 +659,7 @@ const sendPasswordResetEmail = async (user) => {
 
   await sendBrevoEmail({
     to: user.email,
-    subject: "Restablece tu contraseña en Corex",
+    subject: "Restablece tu contraseña en Aventra",
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;">
         <h2>Restablecer contraseña</h2>
