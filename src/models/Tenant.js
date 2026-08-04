@@ -41,6 +41,24 @@ export const Tenant = sequelize.define("Tenant", {
     ),
     defaultValue: "inactive",
   },
+
+  trialEligible: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+
+  trialUsed: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+
+  trialBillingPeriod: {
+    type: DataTypes.ENUM("monthly", "annual"),
+    allowNull: true,
+  },
+
   stripeCustomerId: {
     type: DataTypes.STRING,
     allowNull: true,

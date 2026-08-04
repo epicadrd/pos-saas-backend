@@ -34,6 +34,8 @@ const syncSubscriptionToTenant = async (subscription) => {
     : await Tenant.findOne({
         where: { stripeSubscriptionId: subscription.id },
       });
+    
+      
 
   if (!tenant) {
     console.log("⚠️ No se encontró tenant para subscription:", {
@@ -52,12 +54,18 @@ const syncSubscriptionToTenant = async (subscription) => {
     stripeCustomerId: subscription.customer,
     stripeSubscriptionId: subscription.id,
     stripePriceId:
-      subscription.items?.data?.[0]?.price?.id || tenant.stripePriceId,
+      subscription.items?.data?.[0]?.price?.id ||
+      tenant.stripePriceId,
     subscriptionCurrentPeriodEnd: periodEnd,
-    cancelAtPeriodEnd: subscription.cancel_at_period_end || false,
+    cancelAtPeriodEnd:
+      subscription.cancel_at_period_end || false,
     subscriptionCancelAt: subscription.cancel_at
       ? new Date(subscription.cancel_at * 1000)
       : null,
+    trialUsed:
+      subscription.metadata?.includesFreeTrial === "true"
+        ? true
+        : tenant.trialUsed,
   });
 
   console.log("✅ Tenant sincronizado con Stripe:", {

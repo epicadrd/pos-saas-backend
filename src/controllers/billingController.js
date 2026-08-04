@@ -58,7 +58,31 @@ const getValidStripeCustomerId = async (tenant) => {
 export const createCheckoutSession = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
-    const { plan, billingPeriod = "monthly" } = req.body;
+    const requestedPlan = req.body.plan;
+    const requestedBillingPeriod =
+      req.body.billingPeriod || "monthly";
+
+    const tenant = await Tenant.findByPk(tenantId);
+
+    if (!tenant) {
+      return res.status(404).json({
+        message: "Empresa no encontrada",
+      });
+    }
+
+    const includesFreeTrial =
+      tenant.trialEligible === true &&
+      tenant.trialUsed !== true;
+
+    // Para la prueba se utilizan los datos guardados
+    // durante el registro, no los enviados por el navegador.
+    const plan = includesFreeTrial
+      ? tenant.plan
+      : requestedPlan;
+
+    const billingPeriod = includesFreeTrial
+      ? tenant.trialBillingPeriod
+      : requestedBillingPeriod;
 
     if (!VALID_BILLING_PERIODS.has(billingPeriod)) {
       return res.status(400).json({
@@ -77,41 +101,57 @@ export const createCheckoutSession = async (req, res) => {
       });
     }
 
-    const tenant = await Tenant.findByPk(tenantId);
+    const customerId =
+      await getValidStripeCustomerId(tenant);
 
-    if (!tenant) {
-      return res.status(404).json({ message: "Empresa no encontrada" });
-    }
+    const session =
+      await stripe.checkout.sessions.create({
+        mode: "subscription",
+        customer: customerId,
+        payment_method_types: ["card"],
+        payment_method_collection: includesFreeTrial
+          ? "always"
+          : "if_required",
 
-    const customerId = await getValidStripeCustomerId(tenant);
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerId,
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.APP_URL}/seleccionar-plan`,
-      metadata: {
-        tenantId: String(tenant.id),
-        plan,
-        billingPeriod,
-      },
-      subscription_data: {
+        success_url:
+          `${process.env.APP_URL}/success` +
+          `?session_id={CHECKOUT_SESSION_ID}`,
+
+        cancel_url: includesFreeTrial
+          ? `${process.env.APP_URL}/login`
+          : `${process.env.APP_URL}/seleccionar-plan`,
+
         metadata: {
           tenantId: String(tenant.id),
           plan,
           billingPeriod,
+          includesFreeTrial: String(includesFreeTrial),
         },
-      },
-    });
 
-    return res.json({ url: session.url });
+        subscription_data: {
+          ...(includesFreeTrial
+            ? { trial_period_days: 15 }
+            : {}),
+
+          metadata: {
+            tenantId: String(tenant.id),
+            plan,
+            billingPeriod,
+            includesFreeTrial: String(includesFreeTrial),
+          },
+        },
+      });
+
+    return res.json({
+      url: session.url,
+    });
   } catch (error) {
     console.log("CREATE CHECKOUT SESSION ERROR:", {
       message: error.message,
@@ -122,7 +162,9 @@ export const createCheckoutSession = async (req, res) => {
       raw: error.raw,
     });
 
-    return res.status(500).json({ message: "Error creando sesión de pago" });
+    return res.status(500).json({
+      message: "Error creando sesión de pago",
+    });
   }
 };
 
@@ -139,8 +181,10 @@ export const confirmCheckoutSession = async (req, res) => {
       return res.status(403).json({ message: "No autorizado" });
     }
 
-    if (session.payment_status !== "paid") {
-      return res.status(400).json({ message: "El pago no fue completado" });
+    if (session.status !== "complete") {
+      return res.status(400).json({
+        message: "El proceso no fue completado",
+      });
     }
 
     const subscription =
@@ -168,6 +212,11 @@ export const confirmCheckoutSession = async (req, res) => {
       subscriptionCancelAt: subscription.cancel_at
         ? new Date(subscription.cancel_at * 1000)
         : null,
+
+      trialUsed:
+       session.metadata?.includesFreeTrial === "true"
+        ? true
+        : tenant.trialUsed,
     });
 
     return res.json({

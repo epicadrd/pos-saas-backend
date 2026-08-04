@@ -26,6 +26,13 @@ import {
 const router = express.Router();
 
 router.post("/register", registerRateLimit, register);
+router.post(
+  "/register-trial",
+  registerRateLimit,
+  (req, res) => {
+    req.trialRegistration = true;
+    return register(req, res);
+});
 router.post("/login", loginRateLimit, loginSecurityGuard, login);
 
 router.get("/me", me);

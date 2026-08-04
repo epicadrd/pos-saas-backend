@@ -108,6 +108,12 @@ const sendVerificationEmail = async (user) => {
 
 export const register = async (req, res) => {
   try {
+    const isTrialRegistration = req.trialRegistration === true;
+    const trialPlan = sanitizeString(req.body.plan, 30);
+    const trialBillingPeriod = sanitizeString(
+      req.body.billingPeriod,
+      20
+    );
     const businessName = sanitizeString(req.body.businessName, 150);
     const rnc = sanitizeString(req.body.rnc, 30);
     const phone = sanitizePhone(req.body.phone);
@@ -127,7 +133,27 @@ export const register = async (req, res) => {
       });
     }
 
-    const userExists = await User.findOne({ where: { email } });
+    if (
+      isTrialRegistration &&
+      !["emprendedor", "pyme", "empresarial"].includes(trialPlan)
+    ) {
+      return res.status(400).json({
+        message: "El plan seleccionado no es válido",
+      });
+    }
+
+    if (
+      isTrialRegistration &&
+      !["monthly", "annual"].includes(trialBillingPeriod)
+    ) {
+      return res.status(400).json({
+        message: "La modalidad seleccionada no es válida",
+      });
+    }
+
+    const userExists = await User.findOne({
+      where: { email },
+    });
 
     if (userExists) {
       return res.status(400).json({
@@ -142,6 +168,12 @@ export const register = async (req, res) => {
       businessName: businessName.trim(),
       rnc: rnc?.trim() || null,
       phone: phone?.trim() || null,
+      trialEligible: isTrialRegistration,
+      trialUsed: false,
+      plan: isTrialRegistration ? trialPlan : null,
+      trialBillingPeriod: isTrialRegistration
+        ? trialBillingPeriod
+        : null,
     });
 
     const user = await User.create({
