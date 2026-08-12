@@ -167,6 +167,18 @@ plan: {
   allowNull: true,
 },
 
+featureOverrides: {
+  type: DataTypes.JSON,
+  allowNull: true,
+  defaultValue: null,
+},
+
+additionalUsers: {
+  type: DataTypes.INTEGER.UNSIGNED,
+  allowNull: false,
+  defaultValue: 0,
+},
+
 stripePriceId: {
   type: DataTypes.STRING,
   allowNull: true,

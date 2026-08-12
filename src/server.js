@@ -38,6 +38,9 @@ import posRoutes from "./routes/posRoutes.js";
 
 import electronicInvoiceRoutes from "./routes/electronicInvoiceRoutes.js";
 import electronicInvoicingRequestRoutes from "./routes/electronicInvoicingRequestRoutes.js";
+import {
+  ensureTenantEntitlementColumns,
+} from "./utils/tenantEntitlementsMigration.js";
 
 dotenv.config();
 
@@ -182,6 +185,14 @@ const startServer = async () => {
   try {
     await sequelize.authenticate();
     logger.info("DATABASE_CONNECTED");
+
+    await ensureTenantEntitlementColumns(
+      sequelize
+    );
+
+    logger.info(
+      "TENANT_ENTITLEMENTS_READY"
+    );
 
     await sequelize.sync();
     logger.info("MODELS_SYNCED");
