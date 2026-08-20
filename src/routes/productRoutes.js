@@ -15,6 +15,22 @@ import { requirePlanFeature } from "../middlewares/planMiddleware.js";
 
 const router = express.Router();
 
+router.get(
+  "/invoice-options",
+  protect,
+  requireActiveSubscription,
+  requireRole("master", "admin", "employee"),
+  getProducts
+);
+
+router.post(
+  "/from-invoice",
+  protect,
+  requireActiveSubscription,
+  requireRole("master", "admin", "employee"),
+  createProduct
+);
+
 router.get("/", protect, requireActiveSubscription, requirePlanFeature("inventory"), requireRole("master", "admin", "employee"), getProducts);
 
 router.get("/:id/movements", protect, requireActiveSubscription, requirePlanFeature("inventory"), requireRole("master", "admin"), getProductMovements);

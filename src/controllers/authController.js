@@ -458,6 +458,7 @@ export const updateTenant = async (req, res) => {
     const usCityTaxRate = req.body.usCityTaxRate;
     const invoiceNextNumber = req.body.invoiceNextNumber;
     const invoiceDigits = req.body.invoiceDigits;
+    const defaultInvoiceNotes = sanitizeString(req.body.defaultInvoiceNotes, 2000);
 
     if (!businessName?.trim()) {
       return res.status(400).json({
@@ -499,6 +500,7 @@ export const updateTenant = async (req, res) => {
       electronicInvoicingEnabled;
   }
     const previousTenantData = {
+    defaultInvoiceNotes: tenant.defaultInvoiceNotes,  
     businessName: tenant.businessName,
     email: tenant.email,
     address: tenant.address,
@@ -547,7 +549,11 @@ export const updateTenant = async (req, res) => {
             invoicePrefix: invoicePrefix?.trim() || tenant.invoicePrefix || "FAC",
             invoiceNextNumber: invoiceNextNumber !== undefined && Number(invoiceNextNumber) > 0 ? Number(invoiceNextNumber) : tenant.invoiceNextNumber,
             invoiceDigits:invoiceDigits !== undefined && Number(invoiceDigits) >= 3 ? Number(invoiceDigits) : tenant.invoiceDigits,
-          });
+            defaultInvoiceNotes:
+            req.body.defaultInvoiceNotes !== undefined
+              ? defaultInvoiceNotes?.trim() || null
+              : tenant.defaultInvoiceNotes,
+      });
 
     await logSecurityEvent({
       req,
@@ -558,6 +564,7 @@ export const updateTenant = async (req, res) => {
         tenantId,
         previous: previousTenantData,
         current: {
+          defaultInvoiceNotes: tenant.defaultInvoiceNotes,
           businessName: tenant.businessName,
           email: tenant.email,
           address: tenant.address,

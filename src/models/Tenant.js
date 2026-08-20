@@ -144,6 +144,12 @@ invoiceDigits: {
   defaultValue: 6,
 },
 
+defaultInvoiceNotes: {
+  type: DataTypes.TEXT,
+  allowNull: true,
+  defaultValue: null,
+},
+
 deliveryNotePrefix: {
   type: DataTypes.STRING,
   allowNull: false,
