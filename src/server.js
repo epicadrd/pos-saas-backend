@@ -41,6 +41,7 @@ import electronicInvoicingRequestRoutes from "./routes/electronicInvoicingReques
 import {
   ensureTenantEntitlementColumns,
 } from "./utils/tenantEntitlementsMigration.js";
+import { ensureCustomerLinkColumns } from "./utils/customerLinkMigration.js";
 
 dotenv.config();
 
@@ -193,6 +194,9 @@ const startServer = async () => {
     logger.info(
       "TENANT_ENTITLEMENTS_READY"
     );
+
+    await ensureCustomerLinkColumns(sequelize);
+    logger.info("CUSTOMER_LINKS_READY");
 
     await sequelize.sync();
     logger.info("MODELS_SYNCED");

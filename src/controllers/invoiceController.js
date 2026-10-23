@@ -9,6 +9,7 @@ import {
   User,
 } from "../models/index.js";
 import { logActivity } from "../utils/activityLogger.js";
+import { resolveCustomerId } from "../services/customerLinkService.js";
 import {
   sanitizeString,
   sanitizeEmail,
@@ -363,11 +364,19 @@ export const createInvoice = async (req, res) => {
       else finalStatus = "issued";
     }
 
+    const customerId = await resolveCustomerId({
+      tenantId,
+      customerId: req.body.customerId,
+      customerRnc,
+      transaction,
+    });
+
     const invoice = await Invoice.create(
       {
         tenantId,
         invoiceNumber: generateInvoiceNumber(tenant),
         invoiceType,
+        customerId,
         customerName: customerName.trim(),
         customerRnc,
         customerPhone,
@@ -515,8 +524,16 @@ export const updateDraftInvoice = async (req, res) => {
 
     const total = roundMoney(subtotal + tax - totalRetentions);
 
+    const customerId = await resolveCustomerId({
+      tenantId,
+      customerId: req.body.customerId,
+      customerRnc,
+      transaction,
+    });
+
     await invoice.update(
       {
+        customerId,
         customerName: customerName.trim(),
         customerRnc,
         customerPhone,

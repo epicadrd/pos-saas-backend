@@ -16,6 +16,7 @@ import {
   sanitizeNumber,
   sanitizeInteger,
 } from "../utils/sanitize.js";
+import { resolveCustomerId } from "../services/customerLinkService.js";
 
 
 const generateDeliveryNoteNumber = async (tenantId, transaction) => {
@@ -607,10 +608,17 @@ export const convertDeliveryNoteToInvoice = async (req, res) => {
 
     if (!tenant) throw new Error("Empresa no encontrada");
 
+    const customerId = await resolveCustomerId({
+      tenantId,
+      customerRnc: deliveryNote.customerRnc,
+      transaction,
+    });
+
     const invoice = await Invoice.create(
       {
         tenantId,
         invoiceNumber: generateInvoiceNumber(tenant),
+        customerId,
         customerName: deliveryNote.customerName,
         customerRnc: deliveryNote.customerRnc,
         customerPhone: deliveryNote.customerPhone,

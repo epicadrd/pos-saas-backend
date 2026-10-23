@@ -41,6 +41,11 @@ export const Invoice = sequelize.define("Invoice", {
       allowNull: true,
     },
 
+    customerId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
     customerName: {
       type: DataTypes.STRING,
       allowNull: false,

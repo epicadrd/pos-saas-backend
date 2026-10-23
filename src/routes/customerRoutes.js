@@ -2,6 +2,7 @@ import express from "express";
 import {
   createCustomer,
   deleteCustomer,
+  getCustomerProfile,
   getCustomers,
   updateCustomer,
 } from "../controllers/customerController.js";
@@ -11,6 +12,7 @@ import {requireActiveSubscription} from "../middlewares/subscriptionMiddleware.j
 const router = express.Router();
 
 router.get("/", protect, requireActiveSubscription, getCustomers);
+router.get("/:id/profile", protect, requireActiveSubscription, getCustomerProfile);
 router.post("/", protect, requireActiveSubscription, createCustomer);
 router.put("/:id", protect, requireActiveSubscription, updateCustomer);
 router.delete("/:id", protect, requireActiveSubscription, deleteCustomer);

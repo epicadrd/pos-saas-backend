@@ -16,6 +16,7 @@ import {
   sanitizeNumber,
   sanitizeInteger,
 } from "../utils/sanitize.js";
+import { resolveCustomerId } from "../services/customerLinkService.js";
 
 const generateQuoteNumber = async (tenantId, transaction) => {
   const count = await Quote.count({
@@ -332,10 +333,18 @@ export const createQuote = async (req, res) => {
     const { subtotal, tax, total } = sumTotals(formattedItems);
     const quoteNumber = await generateQuoteNumber(tenantId, transaction);
 
+    const customerId = await resolveCustomerId({
+      tenantId,
+      customerId: req.body.customerId,
+      customerRnc,
+      transaction,
+    });
+
     const quote = await Quote.create(
       {
         tenantId,
         quoteNumber,
+        customerId,
         customerName: customerName.trim(),
         customerRnc,
         customerPhone,
@@ -480,6 +489,7 @@ export const convertQuoteToInvoice = async (req, res) => {
       {
         tenantId,
         invoiceNumber: generateInvoiceNumber(tenant),
+        customerId: quote.customerId,
         customerName: quote.customerName,
         customerRnc: quote.customerRnc,
         customerPhone: quote.customerPhone,
@@ -595,8 +605,16 @@ export const updateQuote = async (req, res) => {
 
     const { subtotal, tax, total } = sumTotals(formattedItems);
 
+    const customerId = await resolveCustomerId({
+      tenantId,
+      customerId: req.body.customerId,
+      customerRnc,
+      transaction,
+    });
+
     await quote.update(
       {
+        customerId,
         customerName: customerName.trim(),
         customerRnc,
         customerPhone,

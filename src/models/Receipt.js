@@ -25,6 +25,11 @@ export const Receipt = sequelize.define("Receipt", {
     allowNull: false,
   },
 
+  customerId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+
   customerName: {
     type: DataTypes.STRING,
     allowNull: false,

@@ -4,6 +4,7 @@ import {
   sanitizeNumber,
   sanitizeInteger,
 } from "../utils/sanitize.js";
+import { resolveCustomerId } from "../services/customerLinkService.js";
 
 const generateReceiptNumber = async (tenantId, transaction) => {
   const count = await Receipt.count({
@@ -176,10 +177,21 @@ export const createReceipt = async (req, res) => {
 
     const receiptNumber = await generateReceiptNumber(tenantId, transaction);
 
+    // Un recibo de factura pertenece al cliente de esa factura
+    const customerId =
+      invoice?.customerId ||
+      (await resolveCustomerId({
+        tenantId,
+        customerId: invoice ? null : req.body.customerId,
+        customerRnc: invoice?.customerRnc || null,
+        transaction,
+      }));
+
     const receipt = await Receipt.create(
       {
         tenantId,
         invoiceId: invoiceId || null,
+        customerId,
         receiptNumber,
         customerName,
         concept: concept || "Pago de factura",
