@@ -10,10 +10,13 @@ import {
   StockMovement,
   User,
   Tenant,
-  ElectronicInvoicingRequest,
 } from "../models/index.js";
 import { sanitizeString, sanitizeNumber, sanitizeInteger } from "../utils/sanitize.js";
-import { sendECFToMSeller,} from "../services/msellerService.js";
+import {
+  canTenantEmit,
+  emitPosSaleECF,
+  validatePosSaleBeforeCharge,
+} from "../services/ecfEmissionService.js";
 
 const generateCode = (id) => `CAJA-${String(id).padStart(3, "0")}`;
 const generateSaleNumber = (id) => `POS-${String(id).padStart(8, "0")}`;
@@ -321,106 +324,6 @@ export const closeCashSession = async (req, res) => {
   }
 };
 
-const formatDateDDMMYYYY = (dateValue) => {
-  const date = dateValue ? new Date(dateValue) : new Date();
-
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-
-  return `${day}-${month}-${year}`;
-};
-
-const getPosTipoECF = (receiptType) => {
-  return receiptType === "credit_fiscal" ? "31" : "32";
-};
-
-const buildECFPayloadFromPosSale = ({ sale, tenant, items, eNcf }) => {
-  const tipoeCF = getPosTipoECF(sale.receiptType);
-
-  const taxableAmount = roundMoney(
-    items.reduce((acc, item) => acc + Number(item.total || 0), 0)
-  );
-
-  const itbisAmount = roundMoney(Number(sale.taxTotal || 0));
-  const totalAmount = roundMoney(Number(sale.total || 0));
-
-  return {
-    ECF: {
-      Encabezado: {
-        Version: "1.0",
-        IdDoc: {
-          TipoeCF: tipoeCF,
-          eNCF: eNcf,
-          FechaVencimientoSecuencia: "31-12-2028",
-          IndicadorEnvioDiferido: "1",
-          IndicadorMontoGravado: "0",
-          TipoIngresos: "01",
-          TipoPago: "1",
-          TotalPaginas: 1,
-        },
-        Emisor: {
-          RNCEmisor: tenant.rnc,
-          RazonSocialEmisor: tenant.legalName || tenant.businessName,
-          DireccionEmisor: tenant.address || "Direccion no especificada",
-          FechaEmision: formatDateDDMMYYYY(sale.createdAt),
-        },
-       Comprador: {
-          RNCComprador:
-            sale.receiptType === "credit_fiscal"
-              ? sale.customerRnc
-              : "00000000000",
-
-          RazonSocialComprador:
-            sale.receiptType === "credit_fiscal"
-              ? sale.customerName
-              : "Consumidor Final",
-        },
-        Totales: {
-          MontoGravadoTotal: taxableAmount,
-          MontoGravadoI1: taxableAmount,
-          MontoExento: 0,
-          ITBIS1: 18,
-          TotalITBIS: itbisAmount,
-          TotalITBIS1: itbisAmount,
-          MontoTotal: totalAmount,
-          MontoNoFacturable: 0,
-        },
-      },
-      DetallesItems: {
-        Item: items.map((item, index) => ({
-          NumeroLinea: String(index + 1),
-          IndicadorFacturacion: "1",
-          NombreItem: item.productName,
-          IndicadorBienoServicio: "1",
-          CantidadItem: Number(item.quantity || 1),
-          UnidadMedida: "43",
-          PrecioUnitarioItem: roundMoney(item.unitPrice),
-          DescuentoMonto: roundMoney(item.discountAmount),
-          MontoItem: roundMoney(item.total),
-        })),
-      },
-      Paginacion: {
-        Pagina: [
-          {
-            PaginaNo: 1,
-            NoLineaDesde: 1,
-            NoLineaHasta: items.length,
-            SubtotalMontoGravadoPagina: taxableAmount,
-            SubtotalMontoGravado1Pagina: taxableAmount,
-            SubtotalExentoPagina: 0,
-            SubtotalItbisPagina: itbisAmount,
-            SubtotalItbis1Pagina: itbisAmount,
-            MontoSubtotalPagina: totalAmount,
-            SubtotalMontoNoFacturablePagina: 0,
-          },
-        ],
-      },
-      FechaHoraFirma: "",
-    },
-  };
-};
-
 export const createPosSale = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -560,6 +463,24 @@ export const createPosSale = async (req, res) => {
       return res.status(400).json({ message: "El monto pagado no cubre el total" });
     }
 
+    const willEmitEcf = await canTenantEmit(tenantId);
+
+    if (willEmitEcf) {
+      try {
+        validatePosSaleBeforeCharge({
+          receiptType,
+          customerRnc,
+          customerName,
+          total,
+          taxEnabled,
+          taxRate,
+        });
+      } catch (validationError) {
+        await transaction.rollback();
+        return res.status(400).json({ message: validationError.message });
+      }
+    }
+
     const sale = await PosSale.create(
       {
         tenantId,
@@ -637,73 +558,19 @@ export const createPosSale = async (req, res) => {
     );
 
    await transaction.commit();
-   try {
-      const createdSale = await PosSale.findOne({
-        where: { id: sale.id, tenantId },
-        include: [{ model: PosSaleItem, as: "items" }],
-      });
+    // La venta ya quedó registrada: si el e-CF falla queda pendiente y
+    // se puede reintentar desde el historial de ventas
+    let ecfError = null;
 
-      const tenantForECF = await Tenant.findByPk(tenantId, {
-        attributes: [
-          "businessName",
-          "legalName",
-          "rnc",
-          "phone",
-          "email",
-          "address",
-          "country",
-          "electronicInvoicingEnabled",
-        ],
-      });
-
-      const activeEcfRequest =
-        await ElectronicInvoicingRequest.findOne({
-          where: {
-            tenantId,
-            status: "active",
-          },
-          attributes: ["id", "status"],
-        });
-
-      if (
-        activeEcfRequest &&
-        tenantForECF?.electronicInvoicingEnabled === true &&
-        tenantForECF?.country === "DO" &&
-        tenantForECF?.rnc &&
-        createdSale
-      ) {
-        const tipoeCF = getPosTipoECF(createdSale.receiptType);
-
-        const eNcf =
-          req.body?.eNcf ||
-          `E${tipoeCF}${String(Date.now()).slice(-10)}`;
-
-        const payload = buildECFPayloadFromPosSale({
-          sale: createdSale,
-          tenant: tenantForECF,
-          items: createdSale.items || [],
-          eNcf,
-        });
-
-        const ecfResult = await sendECFToMSeller(
-          tenantId,
-          payload
-        );
-
-        await createdSale.update({
-          dgiiQrUrl: ecfResult.qr_url || null,
-          eNcf: ecfResult.ecf || ecfResult.ncf || eNcf,
-          tipoeCF,
-          electronicInvoiceStatus: ecfResult.status || "Enviado",
-          securityCode: ecfResult.securityCode || null,
-        });
+    if (willEmitEcf) {
+      try {
+        await emitPosSaleECF({ tenantId, userId, saleId: sale.id });
+      } catch (error) {
+        console.log("POS ECF ERROR:", error.response?.data || error.message);
+        ecfError = error.message;
       }
-    } catch (ecfError) {
-      console.log(
-        "POS ECF ERROR:",
-        ecfError.response?.data || ecfError.message
-      );
     }
+
     const saleDetail = await PosSale.findOne({
       where: {
         id: sale.id,
@@ -752,6 +619,7 @@ export const createPosSale = async (req, res) => {
         ...saleDetail.toJSON(),
         tenant: tenantReceipt,
       },
+      ecfError,
     });
   } catch (error) {
     await transaction.rollback();

@@ -1,6 +1,7 @@
 import express from "express";
 import {
   emitElectronicInvoice,
+  emitPosSaleElectronicInvoice,
   syncElectronicInvoiceStatus,
 } from "../controllers/electronicInvoiceController.js";
 
@@ -14,6 +15,13 @@ router.post(
   protect,
   requireActiveSubscription,
   emitElectronicInvoice
+);
+
+router.post(
+  "/pos-sale/:id/emit",
+  protect,
+  requireActiveSubscription,
+  emitPosSaleElectronicInvoice
 );
 
 router.post(

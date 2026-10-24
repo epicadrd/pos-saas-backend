@@ -28,6 +28,8 @@ import { PosSaleItem } from "./PosSaleItem.js";
 import { CashRegisterUser } from "./CashRegisterUser.js";
 import { ElectronicInvoice } from "./ElectronicInvoice.js";
 import { ElectronicInvoicingRequest } from "./ElectronicInvoicingRequest.js";
+import { FiscalSequence } from "./FiscalSequence.js";
+import { FiscalNumberUsage } from "./FiscalNumberUsage.js";
 import { TenantMSellerCredential } from "./TenantMSellerCredential.js";
 
 Invoice.belongsTo(User, {
@@ -171,6 +173,22 @@ TenantMSellerCredential.belongsTo(Tenant, {
   as: "tenant",
 });
 
+Tenant.hasMany(FiscalSequence, {
+  foreignKey: "tenantId",
+  as: "fiscalSequences",
+  onDelete: "CASCADE",
+});
+FiscalSequence.belongsTo(Tenant, { foreignKey: "tenantId", as: "tenant" });
+
+FiscalSequence.hasMany(FiscalNumberUsage, {
+  foreignKey: "sequenceId",
+  as: "usages",
+});
+FiscalNumberUsage.belongsTo(FiscalSequence, {
+  foreignKey: "sequenceId",
+  as: "sequence",
+});
+
 export {
   sequelize,
   Tenant,
@@ -183,6 +201,8 @@ export {
   ElectronicInvoice,
   ElectronicInvoicingRequest,
   TenantMSellerCredential,
+  FiscalSequence,
+  FiscalNumberUsage,
   Quote,
   QuoteItem,
   DeliveryNote,

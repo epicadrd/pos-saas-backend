@@ -10,6 +10,8 @@ import {
 } from "../models/index.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { resolveCustomerId } from "../services/customerLinkService.js";
+import { getActiveFiscalUsage } from "../services/ecfEmissionService.js";
+import { voidFiscalNumber } from "../services/fiscalSequenceService.js";
 import {
   sanitizeString,
   sanitizeEmail,
@@ -698,6 +700,36 @@ export const cancelInvoice = async (req, res) => {
 
     if (invoice.status === "draft") {
       throw new Error("Los borradores no se anulan, se eliminan");
+    }
+
+    const fiscalUsage = await getActiveFiscalUsage(
+      tenantId,
+      "invoice",
+      invoice.id,
+      transaction
+    );
+
+    if (fiscalUsage) {
+      if (["SENT", "ACCEPTED"].includes(fiscalUsage.status)) {
+        throw new Error(
+          `Esta factura ya se envió a la DGII con el e-NCF ${fiscalUsage.eNcf}. No se puede anular aquí: se corrige con una nota de crédito.`
+        );
+      }
+
+      if (fiscalUsage.status === "RESERVED" && fiscalUsage.attempts > 0) {
+        throw new Error(
+          `No se ha confirmado si el e-NCF ${fiscalUsage.eNcf} llegó a la DGII. Reintenta la emisión para verificarlo antes de anular la factura.`
+        );
+      }
+
+      // El número nunca llegó a MSeller: queda pendiente de anular ante la DGII
+      if (["RESERVED", "FAILED"].includes(fiscalUsage.status)) {
+        await voidFiscalNumber(
+          fiscalUsage,
+          "Factura anulada antes de enviarse a la DGII",
+          transaction
+        );
+      }
     }
 
     const exitMovements = await StockMovement.findAll({

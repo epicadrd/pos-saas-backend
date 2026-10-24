@@ -38,10 +38,12 @@ import posRoutes from "./routes/posRoutes.js";
 
 import electronicInvoiceRoutes from "./routes/electronicInvoiceRoutes.js";
 import electronicInvoicingRequestRoutes from "./routes/electronicInvoicingRequestRoutes.js";
+import fiscalSequenceRoutes from "./routes/fiscalSequenceRoutes.js";
 import {
   ensureTenantEntitlementColumns,
 } from "./utils/tenantEntitlementsMigration.js";
 import { ensureCustomerLinkColumns } from "./utils/customerLinkMigration.js";
+import { ensurePosSaleEcfColumns } from "./utils/posSaleEcfMigration.js";
 
 dotenv.config();
 
@@ -158,6 +160,7 @@ app.use(
   electronicInvoicingRequestRoutes
 );
 app.use("/api/electronic-invoices", electronicInvoiceRoutes);
+app.use("/api/fiscal-sequences", fiscalSequenceRoutes);
 app.use("/api/quotes", quoteRoutes);
 app.use("/api/delivery-notes", deliveryNoteRoutes);
 app.use("/api/receipts", receiptRoutes);
@@ -197,6 +200,9 @@ const startServer = async () => {
 
     await ensureCustomerLinkColumns(sequelize);
     logger.info("CUSTOMER_LINKS_READY");
+
+    await ensurePosSaleEcfColumns(sequelize);
+    logger.info("POS_SALE_ECF_READY");
 
     await sequelize.sync();
     logger.info("MODELS_SYNCED");

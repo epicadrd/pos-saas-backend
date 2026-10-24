@@ -11,13 +11,14 @@ const LINKED_TABLES = ["Invoices", "Quotes", "Receipts"];
  */
 export const ensureCustomerLinkColumns = async (sequelize) => {
   const queryInterface = sequelize.getQueryInterface();
+  // MySQL en Windows devuelve los nombres en minúsculas
   const existingTables = (await queryInterface.showAllTables()).map((table) =>
-    typeof table === "string" ? table : table.tableName
+    String(typeof table === "string" ? table : table.tableName).toLowerCase()
   );
 
   for (const tableName of LINKED_TABLES) {
     // En una base nueva la tabla aún no existe; sync() la crea con la columna.
-    if (!existingTables.includes(tableName)) continue;
+    if (!existingTables.includes(tableName.toLowerCase())) continue;
 
     const table = await queryInterface.describeTable(tableName);
 

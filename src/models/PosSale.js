@@ -59,6 +59,11 @@ export const PosSale = sequelize.define("PosSale", {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  // Fecha y hora de la firma digital del e-CF (se imprime en el ticket)
+  signedDate: {
+    type: DataTypes.STRING(30),
+    allowNull: true,
+  },
 
   discountTotal: {
     type: DataTypes.DECIMAL(12, 2),
