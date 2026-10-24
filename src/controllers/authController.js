@@ -528,7 +528,14 @@ export const updateTenant = async (req, res) => {
       primaryColor: primaryColor || tenant.primaryColor || "#6d4aff",
       invoiceTaxEnabled: typeof invoiceTaxEnabled === "boolean" ? invoiceTaxEnabled: tenant.invoiceTaxEnabled,
       invoiceTaxMode:  invoiceTaxMode === "line" || invoiceTaxMode === "global" ? invoiceTaxMode : tenant.invoiceTaxMode,
-      invoiceTaxRate: invoiceTaxRate !== undefined && Number(invoiceTaxRate) >= 0 ? Number(invoiceTaxRate) : tenant.invoiceTaxRate,
+      // En RD la DGII solo admite ITBIS de 18% o 16%; otra tasa haría rechazar el e-CF
+      invoiceTaxRate:
+        invoiceTaxRate !== undefined &&
+        Number(invoiceTaxRate) >= 0 &&
+        ((country === "US" || country === "DO" ? country : tenant.country) !== "DO" ||
+          [16, 18].includes(Number(invoiceTaxRate)))
+          ? Number(invoiceTaxRate)
+          : tenant.invoiceTaxRate,
       country: country === "US" || country === "DO" ? country : tenant.country,
       electronicInvoicingEnabled:
        resolvedElectronicInvoicingEnabled,
