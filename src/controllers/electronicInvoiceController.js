@@ -15,15 +15,24 @@ const sendEcfError = (res, error, logLabel, fallbackMessage) => {
     });
   }
 
-  return res.status(400).json({
-    message: fallbackMessage,
-    error: error.response?.data || error.message,
-  });
+  return res.status(400).json({ message: fallbackMessage });
+};
+
+// La respuesta cruda del proveedor queda guardada, pero no se envía al cliente
+const toClientElectronicInvoice = (electronicInvoice) => {
+  if (!electronicInvoice) return null;
+
+  const { rawResponse, ...data } =
+    typeof electronicInvoice.toJSON === "function"
+      ? electronicInvoice.toJSON()
+      : electronicInvoice;
+
+  return data;
 };
 
 export const emitElectronicInvoice = async (req, res) => {
   try {
-    const { invoice, electronicInvoice, response } = await emitInvoiceECF({
+    const { invoice, electronicInvoice } = await emitInvoiceECF({
       tenantId: req.user.tenantId,
       userId: req.user.id,
       invoiceId: req.params.id,
@@ -32,8 +41,7 @@ export const emitElectronicInvoice = async (req, res) => {
     return res.status(201).json({
       message: "e-CF enviado correctamente",
       invoice,
-      electronicInvoice,
-      response,
+      electronicInvoice: toClientElectronicInvoice(electronicInvoice),
     });
   } catch (error) {
     return sendEcfError(
@@ -47,7 +55,7 @@ export const emitElectronicInvoice = async (req, res) => {
 
 export const emitPosSaleElectronicInvoice = async (req, res) => {
   try {
-    const { sale, response } = await emitPosSaleECF({
+    const { sale } = await emitPosSaleECF({
       tenantId: req.user.tenantId,
       userId: req.user.id,
       saleId: req.params.id,
@@ -56,7 +64,6 @@ export const emitPosSaleElectronicInvoice = async (req, res) => {
     return res.status(201).json({
       message: "e-CF enviado correctamente",
       sale,
-      response,
     });
   } catch (error) {
     return sendEcfError(
@@ -84,7 +91,7 @@ export const syncElectronicInvoiceStatus = async (req, res) => {
 
     return res.json({
       message: "Estado actualizado correctamente",
-      ...result,
+      electronicInvoice: toClientElectronicInvoice(result.electronicInvoice),
     });
   } catch (error) {
     return sendEcfError(

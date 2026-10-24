@@ -40,7 +40,7 @@ const getTenantMSellerConfiguration = async (
 
   if (!credential) {
     throw new Error(
-      "Esta empresa no tiene credenciales activas de MSeller configuradas"
+      "La facturación electrónica de esta empresa no está configurada todavía"
     );
   }
 
@@ -50,7 +50,7 @@ const getTenantMSellerConfiguration = async (
 
   if (!/^[a-zA-Z0-9_-]{1,50}$/.test(environment)) {
     throw new Error(
-      "El entorno de MSeller configurado no es válido"
+      "El entorno de facturación electrónica configurado no es válido"
     );
   }
 
@@ -72,7 +72,7 @@ const getTenantMSellerConfiguration = async (
     !apiKey
   ) {
     throw new Error(
-      "La configuración de MSeller de esta empresa está incompleta"
+      "La configuración de facturación electrónica de esta empresa está incompleta"
     );
   }
 
@@ -141,7 +141,7 @@ const getAuthorizedSession = async (tenantId, { forceRefresh = false } = {}) => 
           const token = authentication.idToken || authentication.accessToken;
 
           if (!token) {
-            throw new Error("MSeller no devolvió un token de autenticación válido");
+            throw new Error("No se pudo iniciar la sesión para emitir comprobantes");
           }
 
           tokenCache.set(tenantId, {

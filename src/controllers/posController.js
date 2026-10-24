@@ -567,7 +567,10 @@ export const createPosSale = async (req, res) => {
         await emitPosSaleECF({ tenantId, userId, saleId: sale.id });
       } catch (error) {
         console.log("POS ECF ERROR:", error.response?.data || error.message);
-        ecfError = error.message;
+        ecfError =
+          error.name === "FiscalNumberError"
+            ? error.message
+            : "Error inesperado al emitir el comprobante";
       }
     }
 

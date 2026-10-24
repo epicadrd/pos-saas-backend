@@ -70,18 +70,37 @@ export const mapMSellerStatus = (rawStatus) => {
   return "SENT";
 };
 
+// El cliente no debe ver el nombre del proveedor en ningún mensaje
+// "MSeller: motivo" queda solo como "motivo"; cualquier otra mención
+// se presenta como Aventra
+const PROVIDER_NAME = /m\s*-?\s*seller(\.app)?/gi;
+const PROVIDER_PREFIX = /^\s*m\s*-?\s*seller(\.app)?\s*[:\-–|]\s*/i;
+
+const hideProvider = (text) => {
+  const clean = String(text)
+    .replace(PROVIDER_PREFIX, "")
+    .replace(PROVIDER_NAME, "Aventra")
+    .trim();
+
+  return clean
+    ? clean.charAt(0).toUpperCase() + clean.slice(1)
+    : "Error al procesar el comprobante";
+};
+
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
+  let message;
 
   if (data) {
-    if (typeof data === "string") return data.slice(0, 1000);
-    if (data.message) return String(data.message).slice(0, 1000);
-    if (data.error) return String(data.error).slice(0, 1000);
-
-    return JSON.stringify(data).slice(0, 1000);
+    if (typeof data === "string") message = data;
+    else if (data.message) message = data.message;
+    else if (data.error) message = data.error;
+    else message = JSON.stringify(data);
+  } else {
+    message = error?.message || "Error desconocido";
   }
 
-  return String(error?.message || "Error desconocido").slice(0, 1000);
+  return hideProvider(String(message).slice(0, 1000));
 };
 
 /*
@@ -130,7 +149,7 @@ const extractDgiiMessages = (result) => {
     }
   }
 
-  return [...new Set(messages)].join(" | ").slice(0, 1000);
+  return hideProvider([...new Set(messages)].join(" | ").slice(0, 1000));
 };
 
 const hasDocumentData = (result) =>
@@ -149,9 +168,9 @@ const lookupInMSeller = async (tenantId, eNcf) => {
     if (error?.response?.status === 404) return null;
 
     throw new FiscalNumberError(
-      `No se pudo confirmar con MSeller si el e-NCF ${eNcf} ya fue recibido. Intenta de nuevo en unos minutos; no se reenviará hasta confirmarlo.`,
+      `No se pudo confirmar si el e-NCF ${eNcf} ya fue recibido. Intenta de nuevo en unos minutos; no se reenviará hasta confirmarlo.`,
       503,
-      "MSELLER_UNVERIFIED"
+      "ECF_UNVERIFIED"
     );
   }
 };
@@ -305,7 +324,7 @@ const buildBuyer = ({ tipoECF, customerRnc, customerName }) => {
   };
 };
 
-const buildIdDoc = ({ tipoECF, eNcf, sequence, tipoPago }) => {
+const buildIdDoc = ({ tipoECF, eNcf, sequence, tipoPago, fechaLimitePago }) => {
   const idDoc = { TipoeCF: tipoECF, eNCF: eNcf };
 
   // La factura de consumo no lleva fecha de vencimiento de secuencia
@@ -319,6 +338,10 @@ const buildIdDoc = ({ tipoECF, eNcf, sequence, tipoPago }) => {
     IndicadorMontoGravado: "0",
     TipoIngresos: "01",
     TipoPago: tipoPago,
+    // A crédito la DGII exige la fecha límite de pago
+    ...(tipoPago === "2" && fechaLimitePago
+      ? { FechaLimitePago: dateOnlyToDGII(fechaLimitePago) }
+      : {}),
     TotalPaginas: 1,
   };
 };
@@ -341,6 +364,8 @@ const buildInvoicePayload = ({ invoice, tenant, items, tipoECF, eNcf, sequence }
           eNcf,
           sequence,
           tipoPago: Number(invoice.balance || 0) > 0 ? "2" : "1",
+          // Sin vencimiento registrado, el pago vence el día de la factura
+          fechaLimitePago: invoice.dueDate || invoice.invoiceDate || todayInDR(),
         }),
         Emisor: {
           RNCEmisor: digitsOnly(tenant.rnc),
@@ -597,7 +622,13 @@ const getEnvironmentOrFail = async (tenantId) => {
   try {
     return await getMSellerEnvironment(tenantId);
   } catch (error) {
-    throw new FiscalNumberError(error.message, 400, "MSELLER_NOT_CONFIGURED");
+    console.log("ECF ENVIRONMENT ERROR:", tenantId, error.message);
+
+    throw new FiscalNumberError(
+      "La facturación electrónica de esta empresa no está configurada todavía. Contacta a soporte.",
+      400,
+      "ECF_NOT_CONFIGURED"
+    );
   }
 };
 
@@ -687,18 +718,18 @@ const emitFiscalDocument = async ({
         await usage.update({ lastError: message });
 
         throw new FiscalNumberError(
-          `No se recibió confirmación de MSeller para el e-NCF ${usage.eNcf}. Vuelve a intentarlo: antes de reenviar se verificará si ya fue recibido.`,
+          `No se recibió confirmación para el e-NCF ${usage.eNcf}. Vuelve a intentarlo: antes de reenviar se verificará si ya fue recibido.`,
           503,
-          "MSELLER_UNCERTAIN"
+          "ECF_UNCERTAIN"
         );
       }
 
       await usage.update({ status: "FAILED", lastError: message });
 
       throw new FiscalNumberError(
-        `MSeller no aceptó el comprobante: ${message}`,
+        `No se pudo emitir el comprobante: ${message}`,
         502,
-        "MSELLER_FAILED"
+        "ECF_FAILED"
       );
     }
 
@@ -724,7 +755,7 @@ const emitFiscalDocument = async ({
 
 const markDocumentFailure = async (document, error) => {
   const status =
-    error?.code === "MSELLER_UNCERTAIN" || error?.code === "MSELLER_UNVERIFIED"
+    error?.code === "ECF_UNCERTAIN" || error?.code === "ECF_UNVERIFIED"
       ? "Pendiente"
       : "Error";
 

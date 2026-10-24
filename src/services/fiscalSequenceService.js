@@ -656,7 +656,7 @@ export const getFiscalSequenceOverview = async (tenantId) => {
     today,
     sequences: rows,
     incidents: incidents.map((usage) => {
-      const json = usage.toJSON();
+      const { msellerStatus, ...json } = usage.toJSON();
       const document =
         json.documentType === "invoice"
           ? invoiceById.get(json.documentId)
@@ -664,6 +664,7 @@ export const getFiscalSequenceOverview = async (tenantId) => {
 
       return {
         ...json,
+        dgiiStatus: msellerStatus,
         documentNumber:
           document?.invoiceNumber || document?.saleNumber || `#${json.documentId}`,
         customerName: document?.customerName || null,
