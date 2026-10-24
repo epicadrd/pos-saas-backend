@@ -36,9 +36,6 @@ const DISPLAY_STATUS = {
   VOIDED: "Anulado",
 };
 
-const roundMoney = (value) =>
-  Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
-
 const digitsOnly = (value) => String(value || "").replace(/\D/g, "");
 
 const isValidTaxId = (value) => [9, 11].includes(digitsOnly(value).length);
@@ -346,84 +343,176 @@ const buildIdDoc = ({ tipoECF, eNcf, sequence, tipoPago, fechaLimitePago }) => {
   };
 };
 
-const buildInvoicePayload = ({ invoice, tenant, items, tipoECF, eNcf, sequence }) => {
-  const taxableAmount = roundMoney(
-    items.reduce((acc, item) => acc + Number(item.subtotal || 0), 0)
-  );
-  const itbisAmount = roundMoney(
-    items.reduce((acc, item) => acc + Number(item.tax || 0), 0)
-  );
-  const totalAmount = roundMoney(Number(invoice.total || 0));
+/*
+ * Verifica que el e-CF de la factura cuadre con lo facturado antes de
+ * reservar un número. Cada línea conserva su propia tasa: una factura
+ * puede mezclar productos exentos, al 18% y al 16%.
+ * Las retenciones no forman parte del e-CF 31/32: las aplica el
+ * comprador, así que el monto total es subtotal + ITBIS.
+ */
+const prepareInvoiceDocument = (invoice, items) => {
+  if (!items.length) {
+    throw new FiscalNumberError("La factura no tiene productos.");
+  }
 
-  return {
-    ECF: {
-      Encabezado: {
-        Version: "1.0",
-        IdDoc: buildIdDoc({
-          tipoECF,
-          eNcf,
-          sequence,
-          tipoPago: Number(invoice.balance || 0) > 0 ? "2" : "1",
-          // Sin vencimiento registrado, el pago vence el día de la factura
-          fechaLimitePago: invoice.dueDate || invoice.invoiceDate || todayInDR(),
-        }),
-        Emisor: {
-          RNCEmisor: digitsOnly(tenant.rnc),
-          RazonSocialEmisor: tenant.legalName || tenant.businessName,
-          DireccionEmisor: tenant.address || "Direccion no especificada",
-          FechaEmision: invoice.invoiceDate
-            ? dateOnlyToDGII(invoice.invoiceDate)
-            : dateOnlyToDGII(todayInDR()),
-        },
-        Comprador: buildBuyer({
-          tipoECF,
-          customerRnc: invoice.customerRnc,
-          customerName: invoice.customerName,
-        }),
-        Totales: {
-          MontoGravadoTotal: taxableAmount,
-          MontoGravadoI1: taxableAmount,
-          MontoExento: 0,
-          ITBIS1: 18,
-          TotalITBIS: itbisAmount,
-          TotalITBIS1: itbisAmount,
-          MontoTotal: totalAmount,
-          MontoNoFacturable: 0,
-        },
-      },
-      DetallesItems: {
-        Item: items.map((item, index) => ({
-          NumeroLinea: String(index + 1),
-          IndicadorFacturacion: "1",
-          NombreItem: item.productName,
-          IndicadorBienoServicio: "1",
-          CantidadItem: Number(item.quantity || 1),
-          UnidadMedida: "43",
-          PrecioUnitarioItem: roundMoney(item.unitPrice),
-          DescuentoMonto: roundMoney(item.discount),
-          MontoItem: roundMoney(item.subtotal),
-        })),
-      },
-      Paginacion: {
-        Pagina: [
-          {
-            PaginaNo: 1,
-            NoLineaDesde: 1,
-            NoLineaHasta: items.length,
-            SubtotalMontoGravadoPagina: taxableAmount,
-            SubtotalMontoGravado1Pagina: taxableAmount,
-            SubtotalExentoPagina: 0,
-            SubtotalItbisPagina: itbisAmount,
-            SubtotalItbis1Pagina: itbisAmount,
-            MontoSubtotalPagina: totalAmount,
-            SubtotalMontoNoFacturablePagina: 0,
-          },
-        ],
-      },
-      FechaHoraFirma: "",
-    },
-  };
+  const lines = items.map((item, index) => {
+    const quantity = Number(item.quantity || 0);
+    const unitPrice = Number(item.unitPrice || 0);
+    const grossCents = Math.round(quantity * unitPrice * 100);
+    const discountCents = toCents(item.discount);
+    const amountCents = toCents(item.subtotal);
+    const taxCents = toCents(item.tax);
+    const rate = item.isTaxable === false ? 0 : Number(item.taxRate || 0);
+    const label = `Línea ${index + 1} (${item.productName || "producto"})`;
+
+    if (Math.abs(grossCents - discountCents - amountCents) > 1) {
+      throw new FiscalNumberError(
+        `${label}: el monto no cuadra con cantidad, precio y descuento; no se envió a la DGII para no gastar un e-NCF. Contacta a soporte.`
+      );
+    }
+
+    if (rate !== 0 && !isSupportedItbisRate(rate)) {
+      throw new FiscalNumberError(
+        `${label}: la tasa de ITBIS ${rate}% no es válida para la DGII (solo 18% o 16%). Revisa la configuración de impuestos.`
+      );
+    }
+
+    if (Math.abs(Math.round((amountCents * rate) / 100) - taxCents) > 1) {
+      throw new FiscalNumberError(
+        `${label}: el ITBIS no corresponde al ${rate}% del monto; no se envió a la DGII para no gastar un e-NCF. Contacta a soporte.`
+      );
+    }
+
+    return { item, quantity, unitPrice, discountCents, amountCents, taxCents, rate };
+  });
+
+  const taxableCents = lines.reduce((acc, line) => acc + line.amountCents, 0);
+  const taxCents = lines.reduce((acc, line) => acc + line.taxCents, 0);
+  const totalCents = taxableCents + taxCents;
+
+  const mismatch =
+    Math.abs(taxableCents - toCents(invoice.subtotal)) > 1 ||
+    Math.abs(taxCents - toCents(invoice.tax)) > 1;
+
+  if (mismatch) {
+    throw new FiscalNumberError(
+      "Los montos de esta factura no cuadran entre sí; no se envió a la DGII para no gastar un e-NCF. Contacta a soporte."
+    );
+  }
+
+  if (totalCents <= 0) {
+    throw new FiscalNumberError("No se puede emitir un e-CF de una factura en cero.");
+  }
+
+  return { lines, totalCents };
 };
+
+// Agrupa las líneas por tasa para los totales del e-CF
+const sumByRate = (lines) => {
+  const groups = { exemptCents: 0, rates: {} };
+
+  for (const line of lines) {
+    if (line.rate === 0) {
+      groups.exemptCents += line.amountCents;
+      continue;
+    }
+
+    const group = groups.rates[line.rate] || { baseCents: 0, taxCents: 0 };
+    group.baseCents += line.amountCents;
+    group.taxCents += line.taxCents;
+    groups.rates[line.rate] = group;
+  }
+
+  return groups;
+};
+
+/*
+ * Totales del e-CF en el orden del esquema XML de la DGII:
+ * gravados por tasa, exento, tasas, ITBIS por tasa y monto total.
+ */
+const formatTotals = ({ exemptCents, rates }, totalCents) => {
+  const taxed = Object.entries(rates)
+    .map(([rate, group]) => ({ rate: Number(rate), n: ITBIS_INDICATORS[rate], ...group }))
+    .sort((a, b) => a.n.localeCompare(b.n));
+
+  const totals = {};
+
+  if (taxed.length) {
+    totals.MontoGravadoTotal = fromCents(taxed.reduce((acc, g) => acc + g.baseCents, 0));
+    for (const g of taxed) totals[`MontoGravadoI${g.n}`] = fromCents(g.baseCents);
+  }
+
+  if (exemptCents > 0 || !taxed.length) totals.MontoExento = fromCents(exemptCents);
+
+  if (taxed.length) {
+    for (const g of taxed) totals[`ITBIS${g.n}`] = g.rate;
+    totals.TotalITBIS = fromCents(taxed.reduce((acc, g) => acc + g.taxCents, 0));
+    for (const g of taxed) totals[`TotalITBIS${g.n}`] = fromCents(g.taxCents);
+  }
+
+  totals.MontoTotal = fromCents(totalCents);
+
+  return totals;
+};
+
+const buildItem = (line, index) => ({
+  NumeroLinea: String(index + 1),
+  IndicadorFacturacion: line.rate === 0 ? EXEMPT_INDICATOR : ITBIS_INDICATORS[line.rate],
+  NombreItem: String(line.item.productName || "Producto").slice(0, 80),
+  IndicadorBienoServicio: "1",
+  CantidadItem: line.quantity,
+  UnidadMedida: "43",
+  PrecioUnitarioItem: line.unitPrice,
+  ...(line.discountCents > 0
+    ? {
+        DescuentoMonto: fromCents(line.discountCents),
+        TablaSubDescuento: {
+          SubDescuento: [
+            {
+              TipoSubDescuento: "$",
+              MontoSubDescuento: fromCents(line.discountCents),
+            },
+          ],
+        },
+      }
+    : {}),
+  MontoItem: fromCents(line.amountCents),
+});
+
+const buildInvoicePayload = ({ invoice, tenant, document, tipoECF, eNcf, sequence }) => ({
+  ECF: {
+    Encabezado: {
+      Version: "1.0",
+      IdDoc: buildIdDoc({
+        tipoECF,
+        eNcf,
+        sequence,
+        tipoPago: Number(invoice.balance || 0) > 0 ? "2" : "1",
+        // Sin vencimiento registrado, el pago vence el día de la factura
+        fechaLimitePago: invoice.dueDate || invoice.invoiceDate || todayInDR(),
+      }),
+      Emisor: {
+        RNCEmisor: digitsOnly(tenant.rnc),
+        RazonSocialEmisor: tenant.legalName || tenant.businessName,
+        DireccionEmisor: tenant.address || "Direccion no especificada",
+        FechaEmision: invoice.invoiceDate
+          ? dateOnlyToDGII(invoice.invoiceDate)
+          : dateOnlyToDGII(todayInDR()),
+      },
+      Comprador: buildBuyer({
+        tipoECF,
+        customerRnc: invoice.customerRnc,
+        customerName: invoice.customerName,
+      }),
+      Totales: formatTotals(sumByRate(document.lines), document.totalCents),
+    },
+    DetallesItems: {
+      Item: document.lines.map(buildItem),
+    },
+    FechaHoraFirma: "",
+  },
+});
+
 
 // Tasas de ITBIS válidas para e-CF y su indicador de facturación
 const ITBIS_INDICATORS = { 18: "1", 16: "2" };
@@ -546,26 +635,13 @@ const preparePosSaleDocument = (sale, items) => {
 export const isSupportedItbisRate = (rate) =>
   Object.prototype.hasOwnProperty.call(ITBIS_INDICATORS, Number(rate));
 
-const buildPosSaleTotals = ({ rate, taxableCents, taxCents, totalCents }) => {
-  if (rate === 0) {
-    return {
-      MontoExento: fromCents(taxableCents),
-      MontoTotal: fromCents(totalCents),
-    };
-  }
-
-  const n = ITBIS_INDICATORS[rate];
-
-  // El orden de los campos sigue el esquema XML de la DGII
-  return {
-    MontoGravadoTotal: fromCents(taxableCents),
-    [`MontoGravadoI${n}`]: fromCents(taxableCents),
-    [`ITBIS${n}`]: rate,
-    TotalITBIS: fromCents(taxCents),
-    [`TotalITBIS${n}`]: fromCents(taxCents),
-    MontoTotal: fromCents(totalCents),
-  };
-};
+const buildPosSaleTotals = ({ rate, taxableCents, taxCents, totalCents }) =>
+  formatTotals(
+    rate === 0
+      ? { exemptCents: taxableCents, rates: {} }
+      : { exemptCents: 0, rates: { [rate]: { baseCents: taxableCents, taxCents } } },
+    totalCents
+  );
 
 const buildPosSalePayload = ({ sale, tenant, document, tipoECF, eNcf, sequence }) => {
   const indicator = document.rate === 0 ? EXEMPT_INDICATOR : ITBIS_INDICATORS[document.rate];
@@ -856,11 +932,14 @@ export const emitInvoiceECF = async ({ tenantId, userId, invoiceId }) => {
   const tipoECF = invoice.invoiceType === "credit_fiscal" ? "31" : "32";
 
   try {
+    // Antes de reservar el número: un documento que no cuadra gastaría un e-NCF
+    const document = prepareInvoiceDocument(invoice, items);
+
     validateBuyer({
       tipoECF,
       customerRnc: invoice.customerRnc,
       customerName: invoice.customerName,
-      total: invoice.total,
+      total: fromCents(document.totalCents),
     });
 
     const { usage, result, environment } = await emitFiscalDocument({
@@ -870,7 +949,7 @@ export const emitInvoiceECF = async ({ tenantId, userId, invoiceId }) => {
       documentId: invoice.id,
       tipoECF,
       buildPayload: ({ eNcf, sequence }) =>
-        buildInvoicePayload({ invoice, tenant, items, tipoECF, eNcf, sequence }),
+        buildInvoicePayload({ invoice, tenant, document, tipoECF, eNcf, sequence }),
     });
 
     const electronicInvoice = await persistInvoiceResult({
