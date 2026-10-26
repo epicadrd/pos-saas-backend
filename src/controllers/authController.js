@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import {
+  sequelize,
   Tenant,
   User,
   ElectronicInvoicingRequest,
@@ -164,32 +165,55 @@ export const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const verification = generateEmailVerification();
 
-    const tenant = await Tenant.create({
-      businessName: businessName.trim(),
-      rnc: rnc?.trim() || null,
-      phone: phone?.trim() || null,
-      trialEligible: isTrialRegistration,
-      trialUsed: false,
-      plan: isTrialRegistration ? trialPlan : null,
-      trialBillingPeriod: isTrialRegistration
-        ? trialBillingPeriod
-        : null,
-    });
+    /*
+      La cuenta solo se guarda si el correo de confirmación se envió:
+      si falla, se deshace todo y la persona puede volver a intentarlo
+      con el mismo correo.
+    */
+    const registration = await sequelize.transaction();
+    let user;
 
-    const user = await User.create({
-      tenantId: tenant.id,
-      name: name.trim(),
-      email,
-      password: hashedPassword,
-      role: "master",
-      emailVerified: false,
-      emailVerificationToken: verification.token,
-      emailVerificationExpires: verification.expires,
-    });
+    try {
+      const tenant = await Tenant.create({
+        businessName: businessName.trim(),
+        rnc: rnc?.trim() || null,
+        phone: phone?.trim() || null,
+        trialEligible: isTrialRegistration,
+        trialUsed: false,
+        plan: isTrialRegistration ? trialPlan : null,
+        trialBillingPeriod: isTrialRegistration
+          ? trialBillingPeriod
+          : null,
+      }, { transaction: registration });
 
-    user.rawVerificationToken = verification.token;
+      user = await User.create({
+        tenantId: tenant.id,
+        name: name.trim(),
+        email,
+        password: hashedPassword,
+        role: "master",
+        emailVerified: false,
+        emailVerificationToken: verification.token,
+        emailVerificationExpires: verification.expires,
+      }, { transaction: registration });
 
-    await sendVerificationEmail(user);
+      user.rawVerificationToken = verification.token;
+
+      await sendVerificationEmail(user);
+      await registration.commit();
+    } catch (error) {
+      if (!registration.finished) await registration.rollback();
+
+      if (String(error.message || "").includes("Brevo")) {
+        logger.error("REGISTER_EMAIL_ERROR", error);
+        return res.status(503).json({
+          message:
+            "No pudimos enviar el correo de confirmación. Tu cuenta no se creó; inténtalo de nuevo en unos minutos.",
+        });
+      }
+
+      throw error;
+    }
 
     await logSecurityEvent({
       req,
