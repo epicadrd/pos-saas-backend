@@ -4,6 +4,7 @@ import {
   emitPosSaleECF,
   syncInvoiceECFStatus,
 } from "../services/ecfEmissionService.js";
+import { attachEcfPrintData } from "./invoiceController.js";
 
 const sendEcfError = (res, error, logLabel, fallbackMessage) => {
   console.log(logLabel, error.response?.data || error);
@@ -38,9 +39,14 @@ export const emitElectronicInvoice = async (req, res) => {
       invoiceId: req.params.id,
     });
 
+    const [printableInvoice] = await attachEcfPrintData(
+      req.user.tenantId,
+      [invoice]
+    );
+
     return res.status(201).json({
       message: "e-CF enviado correctamente",
-      invoice,
+      invoice: printableInvoice,
       electronicInvoice: toClientElectronicInvoice(electronicInvoice),
     });
   } catch (error) {

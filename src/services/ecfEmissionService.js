@@ -1086,3 +1086,48 @@ export const syncInvoiceECFStatus = async ({ tenantId, electronicInvoice }) => {
 
   return { electronicInvoice, response: result };
 };
+
+/*
+ * Consulta en MSeller un e-NCF ya enviado (o con envío sin confirmar) y
+ * guarda el resultado en el número y en su factura o venta.
+ * Devuelve false si MSeller no tiene el documento.
+ */
+export const syncFiscalUsage = async (usage) => {
+  const result = await lookupInMSeller(usage.tenantId, usage.eNcf);
+
+  if (!result) return false;
+
+  await applyMSellerResult(usage, result);
+
+  if (usage.documentType === "invoice") {
+    const invoice = await Invoice.findOne({
+      where: { id: usage.documentId, tenantId: usage.tenantId },
+    });
+
+    if (invoice) {
+      await persistInvoiceResult({
+        invoice,
+        usage,
+        result,
+        environment: usage.environment,
+      });
+    }
+  } else {
+    const sale = await PosSale.findOne({
+      where: { id: usage.documentId, tenantId: usage.tenantId },
+    });
+
+    if (sale) {
+      await sale.update({
+        eNcf: usage.eNcf,
+        tipoeCF: usage.tipoECF,
+        dgiiQrUrl: result?.qr_url || sale.dgiiQrUrl,
+        securityCode: result?.securityCode || sale.securityCode,
+        signedDate: result?.signedDate || sale.signedDate,
+        electronicInvoiceStatus: getDisplayStatus(usage, result),
+      });
+    }
+  }
+
+  return true;
+};

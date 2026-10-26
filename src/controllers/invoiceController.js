@@ -7,6 +7,9 @@ import {
   StockMovement,
   Tenant,
   User,
+  ElectronicInvoice,
+  FiscalNumberUsage,
+  FiscalSequence,
 } from "../models/index.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { resolveCustomerId } from "../services/customerLinkService.js";
@@ -230,6 +233,51 @@ const applyInvoiceStockExit = async ({
   }
 };
 
+/*
+ * Datos de la e-CF que exige la representación impresa: código de
+ * seguridad, fecha de firma y vencimiento de la secuencia del e-NCF.
+ */
+export const attachEcfPrintData = async (tenantId, invoices) => {
+  const withNumber = invoices.filter((invoice) => invoice.eNcf);
+  if (!withNumber.length) return invoices.map((invoice) => invoice.toJSON());
+
+  const [electronicInvoices, usages] = await Promise.all([
+    ElectronicInvoice.findAll({
+      where: { tenantId, invoiceId: withNumber.map((invoice) => invoice.id) },
+      attributes: ["invoiceId", "eNcf", "securityCode", "signedDate"],
+    }),
+    FiscalNumberUsage.findAll({
+      where: {
+        tenantId,
+        documentType: "invoice",
+        documentId: withNumber.map((invoice) => invoice.id),
+        status: { [Op.ne]: "VOIDED" },
+      },
+      attributes: ["documentId", "eNcf"],
+      include: [{ model: FiscalSequence, as: "sequence", attributes: ["expirationDate"] }],
+    }),
+  ]);
+
+  return invoices.map((invoice) => {
+    const data = invoice.toJSON();
+    if (!invoice.eNcf) return data;
+
+    const electronic = electronicInvoices.find(
+      (row) => row.invoiceId === invoice.id && row.eNcf === invoice.eNcf
+    );
+    const usage = usages.find(
+      (row) => row.documentId === invoice.id && row.eNcf === invoice.eNcf
+    );
+
+    return {
+      ...data,
+      securityCode: electronic?.securityCode || null,
+      signedDate: electronic?.signedDate || null,
+      sequenceExpirationDate: usage?.sequence?.expirationDate || null,
+    };
+  });
+};
+
 export const getInvoices = async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
@@ -259,7 +307,7 @@ export const getInvoices = async (req, res) => {
       order: [["createdAt", "DESC"]],
     });
 
-    return res.json(invoices);
+    return res.json(await attachEcfPrintData(tenantId, invoices));
   } catch (error) {
     console.log("GET INVOICES ERROR:", error);
     return res.status(500).json({ message: "Error obteniendo facturas" });
@@ -282,7 +330,9 @@ export const getInvoiceById = async (req, res) => {
       return res.status(404).json({ message: "Factura no encontrada" });
     }
 
-    return res.json(invoice);
+    const [withEcfData] = await attachEcfPrintData(tenantId, [invoice]);
+
+    return res.json(withEcfData);
   } catch (error) {
     console.log("GET INVOICE BY ID ERROR:", error);
     return res.status(500).json({ message: "Error obteniendo factura" });

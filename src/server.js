@@ -44,6 +44,7 @@ import {
 } from "./utils/tenantEntitlementsMigration.js";
 import { ensureCustomerLinkColumns } from "./utils/customerLinkMigration.js";
 import { ensurePosSaleEcfColumns } from "./utils/posSaleEcfMigration.js";
+import { startECFStatusPoller } from "./services/ecfStatusPoller.js";
 
 dotenv.config();
 
@@ -210,6 +211,8 @@ const startServer = async () => {
     app.listen(PORT, () => {
       logger.info("SERVER_RUNNING", { port: PORT });
     });
+
+    startECFStatusPoller();
   } catch (error) {
     logger.error("SERVER_START_ERROR", error);
     process.exit(1);
