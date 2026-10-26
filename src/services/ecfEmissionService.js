@@ -8,6 +8,7 @@ import {
   ElectronicInvoice,
   ElectronicInvoicingRequest,
   FiscalNumberUsage,
+  TenantMSellerCredential,
 } from "../models/index.js";
 import {
   sendECFToMSeller,
@@ -230,6 +231,19 @@ export const getEmissionTenant = async (tenantId) => {
   if (tenant.electronicInvoicingEnabled !== true) {
     throw new FiscalNumberError(
       "La facturación electrónica está desactivada para esta empresa.",
+      403
+    );
+  }
+
+  // Aventra pausa la emisión desactivando las credenciales
+  const activeCredential = await TenantMSellerCredential.findOne({
+    where: { tenantId, isActive: true },
+    attributes: ["id"],
+  });
+
+  if (!activeCredential) {
+    throw new FiscalNumberError(
+      "La facturación electrónica de esta empresa está pausada. Contacta a soporte de Aventra.",
       403
     );
   }

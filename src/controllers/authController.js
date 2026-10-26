@@ -5,6 +5,7 @@ import {
   Tenant,
   User,
   ElectronicInvoicingRequest,
+  TenantMSellerCredential,
 } from "../models/index.js";
 import {
   clearLoginFailures,
@@ -516,6 +517,20 @@ export const updateTenant = async (req, res) => {
         return res.status(403).json({
           message:
             "La facturación electrónica todavía no ha sido habilitada para esta empresa.",
+        });
+      }
+
+      // Aventra pausa la emisión desactivando las credenciales
+      const activeCredential =
+        await TenantMSellerCredential.findOne({
+          where: { tenantId, isActive: true },
+          attributes: ["id"],
+        });
+
+      if (!activeCredential) {
+        return res.status(403).json({
+          message:
+            "La facturación electrónica de esta empresa está pausada. Contacta a soporte de Aventra.",
         });
       }
     }
