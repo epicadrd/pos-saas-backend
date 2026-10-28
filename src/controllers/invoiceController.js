@@ -237,6 +237,19 @@ const applyInvoiceStockExit = async ({
  * Datos de la e-CF que exige la representación impresa: código de
  * seguridad, fecha de firma y vencimiento de la secuencia del e-NCF.
  */
+const INVOICE_TYPES = [
+  "consumer_final",
+  "credit_fiscal",
+  "special_regime",
+  "government",
+];
+
+// Las ventas a regímenes especiales (E44) van exentas de ITBIS
+const getInvoiceTaxConfig = (tenant, invoiceType) =>
+  invoiceType === "special_regime"
+    ? { ...tenant.toJSON(), invoiceTaxEnabled: false }
+    : tenant;
+
 export const attachEcfPrintData = async (tenantId, invoices) => {
   const withNumber = invoices.filter((invoice) => invoice.eNcf);
   if (!withNumber.length) return invoices.map((invoice) => invoice.toJSON());
@@ -359,7 +372,7 @@ export const createInvoice = async (req, res) => {
     const notes = sanitizeString(req.body.notes, 3000) || null;
 
     const invoiceType = sanitizeString(req.body.invoiceType, 30) || "consumer_final";
-    const validInvoiceTypes = ["consumer_final", "credit_fiscal"];
+    const validInvoiceTypes = INVOICE_TYPES;
 
     if (!validInvoiceTypes.includes(invoiceType)) {
       throw new Error("Tipo de factura inválido");
@@ -392,7 +405,7 @@ export const createInvoice = async (req, res) => {
       tenantId,
       transaction,
       shouldValidateStock: !isDraft,
-      taxConfig: tenant,
+      taxConfig: getInvoiceTaxConfig(tenant, invoiceType),
     });
 
     const subtotal = roundMoney(normalizedItems.reduce((acc, i) => acc + Number(i.subtotal || 0), 0));
@@ -537,7 +550,7 @@ export const updateDraftInvoice = async (req, res) => {
     const notes = sanitizeString(req.body.notes, 3000) || null;
     const invoiceType = sanitizeString(req.body.invoiceType, 30) || "consumer_final";
 
-    const validInvoiceTypes = ["consumer_final", "credit_fiscal"];
+    const validInvoiceTypes = INVOICE_TYPES;
 
     if (!validInvoiceTypes.includes(invoiceType)) {
       throw new Error("Tipo de factura inválido");
@@ -563,7 +576,7 @@ export const updateDraftInvoice = async (req, res) => {
       tenantId,
       transaction,
       shouldValidateStock: false,
-      taxConfig: tenant,
+      taxConfig: getInvoiceTaxConfig(tenant, invoiceType),
     });
 
     const subtotal = roundMoney(normalizedItems.reduce((acc, item) => acc + Number(item.subtotal || 0), 0));
@@ -728,6 +741,57 @@ export const issueDraftInvoice = async (req, res) => {
   }
 };
 
+// Devuelve al inventario lo que salió con la factura
+export const returnInvoiceStock = async ({
+  invoice,
+  tenantId,
+  userId,
+  reason,
+  transaction,
+}) => {
+  const exitMovements = await StockMovement.findAll({
+    where: {
+      tenantId,
+      referenceType: "invoice",
+      referenceId: invoice.id,
+      type: "exit",
+    },
+    transaction,
+  });
+
+  for (const movement of exitMovements) {
+    const product = await Product.findOne({
+      where: { id: movement.productId, tenantId },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!product) continue;
+
+    const previousStock = Number(product.stock);
+    const newStock = previousStock + Number(movement.quantity);
+
+    await product.update({ stock: newStock }, { transaction });
+
+    await StockMovement.create(
+      {
+        tenantId,
+        productId: product.id,
+        userId,
+        type: "return",
+        quantity: Number(movement.quantity),
+        previousStock,
+        newStock,
+        reason,
+        referenceType: "invoice",
+        referenceId: invoice.id,
+        referenceNumber: invoice.invoiceNumber,
+      },
+      { transaction }
+    );
+  }
+};
+
 export const cancelInvoice = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -782,47 +846,13 @@ export const cancelInvoice = async (req, res) => {
       }
     }
 
-    const exitMovements = await StockMovement.findAll({
-      where: {
-        tenantId,
-        referenceType: "invoice",
-        referenceId: invoice.id,
-        type: "exit",
-      },
+    await returnInvoiceStock({
+      invoice,
+      tenantId,
+      userId,
+      reason: "Anulación de factura",
       transaction,
     });
-
-    for (const movement of exitMovements) {
-      const product = await Product.findOne({
-        where: { id: movement.productId, tenantId },
-        transaction,
-        lock: transaction.LOCK.UPDATE,
-      });
-
-      if (!product) continue;
-
-      const previousStock = Number(product.stock);
-      const newStock = previousStock + Number(movement.quantity);
-
-      await product.update({ stock: newStock }, { transaction });
-
-      await StockMovement.create(
-        {
-          tenantId,
-          productId: product.id,
-          userId,
-          type: "return",
-          quantity: Number(movement.quantity),
-          previousStock,
-          newStock,
-          reason: "Anulación de factura",
-          referenceType: "invoice",
-          referenceId: invoice.id,
-          referenceNumber: invoice.invoiceNumber,
-        },
-        { transaction }
-      );
-    }
 
     await invoice.update(
       {

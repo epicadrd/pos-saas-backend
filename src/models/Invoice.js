@@ -16,7 +16,7 @@ export const Invoice = sequelize.define("Invoice", {
     },
 
     invoiceType: {
-      type: DataTypes.ENUM("consumer_final", "credit_fiscal"),
+      type: DataTypes.ENUM("consumer_final", "credit_fiscal", "special_regime", "government"),
       allowNull: false,
       defaultValue: "consumer_final",
     },

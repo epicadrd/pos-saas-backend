@@ -30,6 +30,7 @@ import { ElectronicInvoice } from "./ElectronicInvoice.js";
 import { ElectronicInvoicingRequest } from "./ElectronicInvoicingRequest.js";
 import { FiscalSequence } from "./FiscalSequence.js";
 import { FiscalNumberUsage } from "./FiscalNumberUsage.js";
+import { FiscalNote } from "./FiscalNote.js";
 import { TenantMSellerCredential } from "./TenantMSellerCredential.js";
 
 Invoice.belongsTo(User, {
@@ -189,8 +190,12 @@ FiscalNumberUsage.belongsTo(FiscalSequence, {
   as: "sequence",
 });
 
+Invoice.hasMany(FiscalNote, { foreignKey: "invoiceId", as: "fiscalNotes" });
+FiscalNote.belongsTo(Invoice, { foreignKey: "invoiceId", as: "invoice" });
+
 export {
   sequelize,
+  FiscalNote,
   Tenant,
   User,
   Product,

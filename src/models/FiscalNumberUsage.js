@@ -50,7 +50,7 @@ export const FiscalNumberUsage = sequelize.define(
     },
 
     documentType: {
-      type: DataTypes.ENUM("invoice", "pos_sale"),
+      type: DataTypes.ENUM("invoice", "pos_sale", "fiscal_note"),
       allowNull: false,
     },
 

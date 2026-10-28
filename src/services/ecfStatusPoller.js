@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 import { FiscalNumberUsage } from "../models/index.js";
 import { syncFiscalUsage } from "./ecfEmissionService.js";
+import { applyPendingFiscalNotes } from "../controllers/fiscalNoteController.js";
 import { logger } from "../utils/secureLogger.js";
 
 const POLL_INTERVAL_MS = 2 * 60 * 1000;
@@ -63,6 +64,9 @@ export const pollPendingECFStatuses = async () => {
     if (usages.length) {
       logger.info("ECF_STATUS_POLL", { checked: usages.length, changed: resolved });
     }
+
+    // Notas que la DGII aceptó después del envío: se aplican a su factura
+    await applyPendingFiscalNotes();
   } catch (error) {
     logger.error("ECF_STATUS_POLL_FAILED", error);
   } finally {

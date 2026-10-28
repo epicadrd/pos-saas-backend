@@ -5,6 +5,8 @@ import {
   InvoiceItem,
   PosSale,
   PosSaleItem,
+  FiscalNote,
+  FiscalSequence,
   ElectronicInvoice,
   ElectronicInvoicingRequest,
   FiscalNumberUsage,
@@ -36,6 +38,24 @@ const DISPLAY_STATUS = {
   REJECTED: "Rechazado",
   VOIDED: "Anulado",
 };
+
+// Tipo de factura de Aventra → tipo de e-CF
+export const INVOICE_ECF_TYPES = {
+  consumer_final: "32",
+  credit_fiscal: "31",
+  special_regime: "44",
+  government: "45",
+};
+
+// Tipos que exigen identificar al comprador con RNC o cédula
+const BUYER_REQUIRED_TYPES = {
+  31: "La factura de crédito fiscal",
+  44: "La factura para regímenes especiales",
+  45: "La factura gubernamental",
+};
+
+// La DGII no pide fecha de vencimiento de secuencia en estos tipos
+const NO_SEQUENCE_EXPIRATION_TYPES = ["32", "34"];
 
 const digitsOnly = (value) => String(value || "").replace(/\D/g, "");
 
@@ -268,16 +288,18 @@ export const canTenantEmit = async (tenantId) => {
 };
 
 const validateBuyer = ({ tipoECF, customerRnc, customerName, total }) => {
-  if (tipoECF === "31") {
+  const documentLabel = BUYER_REQUIRED_TYPES[tipoECF];
+
+  if (documentLabel) {
     if (!isValidTaxId(customerRnc)) {
       throw new FiscalNumberError(
-        "La factura de crédito fiscal requiere un RNC (9 dígitos) o cédula (11 dígitos) válido del cliente."
+        `${documentLabel} requiere un RNC (9 dígitos) o cédula (11 dígitos) válido del cliente.`
       );
     }
 
     if (!String(customerName || "").trim()) {
       throw new FiscalNumberError(
-        "La factura de crédito fiscal requiere el nombre o razón social del cliente."
+        `${documentLabel} requiere el nombre o razón social del cliente.`
       );
     }
   }
@@ -335,12 +357,23 @@ const buildBuyer = ({ tipoECF, customerRnc, customerName }) => {
   };
 };
 
-const buildIdDoc = ({ tipoECF, eNcf, sequence, tipoPago, fechaLimitePago }) => {
+const buildIdDoc = ({
+  tipoECF,
+  eNcf,
+  sequence,
+  tipoPago,
+  fechaLimitePago,
+  indicadorNotaCredito,
+}) => {
   const idDoc = { TipoeCF: tipoECF, eNCF: eNcf };
 
-  // La factura de consumo no lleva fecha de vencimiento de secuencia
-  if (tipoECF !== "32") {
+  if (!NO_SEQUENCE_EXPIRATION_TYPES.includes(tipoECF)) {
     idDoc.FechaVencimientoSecuencia = dateOnlyToDGII(sequence.expirationDate);
+  }
+
+  // Solo la nota de crédito: 0 hasta 30 días después de la factura, 1 después
+  if (indicadorNotaCredito !== undefined) {
+    idDoc.IndicadorNotaCredito = indicadorNotaCredito;
   }
 
   return {
@@ -943,11 +976,17 @@ export const emitInvoiceECF = async ({ tenantId, userId, invoiceId }) => {
     );
   }
 
-  const tipoECF = invoice.invoiceType === "credit_fiscal" ? "31" : "32";
+  const tipoECF = INVOICE_ECF_TYPES[invoice.invoiceType] || "32";
 
   try {
     // Antes de reservar el número: un documento que no cuadra gastaría un e-NCF
     const document = prepareInvoiceDocument(invoice, items);
+
+    if (tipoECF === "44" && document.lines.some((line) => line.rate !== 0)) {
+      throw new FiscalNumberError(
+        "La factura para regímenes especiales va exenta de ITBIS. Crea la factura de nuevo sin ITBIS."
+      );
+    }
 
     validateBuyer({
       tipoECF,
@@ -1112,6 +1151,12 @@ export const syncFiscalUsage = async (usage) => {
         environment: usage.environment,
       });
     }
+  } else if (usage.documentType === "fiscal_note") {
+    const note = await FiscalNote.findOne({
+      where: { id: usage.documentId, tenantId: usage.tenantId },
+    });
+
+    if (note) await persistFiscalNoteResult({ note, usage, result });
   } else {
     const sale = await PosSale.findOne({
       where: { id: usage.documentId, tenantId: usage.tenantId },
@@ -1130,4 +1175,147 @@ export const syncFiscalUsage = async (usage) => {
   }
 
   return true;
+};
+
+/* ------------------------------------------------------------------ */
+/* Notas de crédito (E34) y de débito (E33)                            */
+/* ------------------------------------------------------------------ */
+
+export const NOTE_ECF_TYPES = { credit: "34", debit: "33" };
+
+const daysBetween = (fromIso, toIso) =>
+  Math.round(
+    (new Date(`${toIso}T00:00:00Z`) - new Date(`${fromIso}T00:00:00Z`)) /
+      (24 * 60 * 60 * 1000)
+  );
+
+// Las líneas de la nota ya vienen calculadas y validadas
+const noteLinesToDocument = (note) => {
+  const lines = (note.lines || []).map((line) => ({
+    item: { productName: line.productName },
+    quantity: Number(line.quantity),
+    unitPrice: Number(line.unitPrice),
+    discountCents: toCents(line.discount),
+    amountCents: toCents(line.subtotal),
+    taxCents: toCents(line.tax),
+    rate: Number(line.taxRate || 0),
+  }));
+
+  const totalCents = lines.reduce(
+    (acc, line) => acc + line.amountCents + line.taxCents,
+    0
+  );
+
+  if (!lines.length || totalCents <= 0) {
+    throw new FiscalNumberError("La nota no tiene montos para enviar.");
+  }
+
+  return { lines, totalCents };
+};
+
+const buildFiscalNotePayload = ({
+  note,
+  tenant,
+  document,
+  tipoECF,
+  eNcf,
+  sequence,
+  referenceTipoECF,
+}) => ({
+  ECF: {
+    Encabezado: {
+      Version: "1.0",
+      IdDoc: buildIdDoc({
+        tipoECF,
+        eNcf,
+        sequence,
+        tipoPago: "1",
+        indicadorNotaCredito:
+          tipoECF === "34"
+            ? daysBetween(note.referenceDate, note.noteDate) > 30
+              ? "1"
+              : "0"
+            : undefined,
+      }),
+      Emisor: {
+        RNCEmisor: digitsOnly(tenant.rnc),
+        RazonSocialEmisor: tenant.legalName || tenant.businessName,
+        DireccionEmisor: tenant.address || "Direccion no especificada",
+        FechaEmision: dateOnlyToDGII(note.noteDate),
+      },
+      Comprador: buildBuyer({
+        tipoECF: referenceTipoECF,
+        customerRnc: note.customerRnc,
+        customerName: note.customerName,
+      }),
+      Totales: formatTotals(sumByRate(document.lines), document.totalCents),
+    },
+    DetallesItems: {
+      Item: document.lines.map(buildItem),
+    },
+    InformacionReferencia: {
+      NCFModificado: note.referenceENcf,
+      FechaNCFModificado: dateOnlyToDGII(note.referenceDate),
+      CodigoModificacion: note.modificationCode,
+      RazonModificacion: String(note.reason).slice(0, 90),
+    },
+    FechaHoraFirma: "",
+  },
+});
+
+const persistFiscalNoteResult = async ({ note, usage, result }) => {
+  const sequence = await FiscalSequence.findByPk(usage.sequenceId, {
+    attributes: ["expirationDate"],
+  });
+
+  await note.update({
+    eNcf: usage.eNcf,
+    dgiiQrUrl: result?.qr_url || note.dgiiQrUrl,
+    securityCode: result?.securityCode || note.securityCode,
+    signedDate: result?.signedDate || note.signedDate,
+    sequenceExpirationDate: sequence?.expirationDate || note.sequenceExpirationDate,
+    electronicInvoiceStatus: getDisplayStatus(usage, result),
+  });
+
+  return note;
+};
+
+export const emitFiscalNoteECF = async ({ tenantId, userId, noteId }) => {
+  const tenant = await getEmissionTenant(tenantId);
+
+  const note = await FiscalNote.findOne({ where: { id: noteId, tenantId } });
+
+  if (!note) throw new FiscalNumberError("Nota no encontrada.", 404);
+
+  const tipoECF = note.tipoeCF;
+  const referenceTipoECF = note.referenceENcf.slice(1, 3);
+
+  try {
+    const document = noteLinesToDocument(note);
+
+    const { usage, result } = await emitFiscalDocument({
+      tenantId,
+      userId,
+      documentType: "fiscal_note",
+      documentId: note.id,
+      tipoECF,
+      buildPayload: ({ eNcf, sequence }) =>
+        buildFiscalNotePayload({
+          note,
+          tenant,
+          document,
+          tipoECF,
+          eNcf,
+          sequence,
+          referenceTipoECF,
+        }),
+    });
+
+    await persistFiscalNoteResult({ note, usage, result });
+
+    return { note, usage, response: result };
+  } catch (error) {
+    await markDocumentFailure(note, error);
+    throw error;
+  }
 };
