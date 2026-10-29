@@ -244,6 +244,23 @@ const INVOICE_TYPES = [
   "government",
 ];
 
+export const INVOICE_CURRENCIES = ["DOP", "USD"];
+
+// En USD la tasa es obligatoria para poder enviar el e-CF en pesos
+const parseInvoiceCurrency = (body) => {
+  const currency = INVOICE_CURRENCIES.includes(body.currency) ? body.currency : "DOP";
+
+  if (currency === "DOP") return { currency, exchangeRate: null };
+
+  const rate = Number(body.exchangeRate);
+  const exchangeRate =
+    Number.isFinite(rate) && rate > 0 && rate < 1000
+      ? Math.round(rate * 10000) / 10000
+      : null;
+
+  return { currency, exchangeRate };
+};
+
 // Las ventas a regímenes especiales (E44) van exentas de ITBIS
 const getInvoiceTaxConfig = (tenant, invoiceType) =>
   invoiceType === "special_regime"
@@ -410,6 +427,7 @@ export const createInvoice = async (req, res) => {
 
     const subtotal = roundMoney(normalizedItems.reduce((acc, i) => acc + Number(i.subtotal || 0), 0));
     const tax = roundMoney(normalizedItems.reduce((acc, i) => acc + Number(i.tax || 0), 0));
+    const { currency, exchangeRate } = parseInvoiceCurrency(req.body);
     const applyRetentions = req.body.applyRetentions === true;
     const itbisRetention = applyRetentions ? roundMoney(tax) : 0;
     const isrRetention = applyRetentions ? roundMoney(subtotal * 0.15) : 0;
@@ -448,6 +466,8 @@ export const createInvoice = async (req, res) => {
         customerEmail,
         subtotal,
         tax,
+        currency,
+        exchangeRate,
         applyRetentions,
         itbisRetention,
         isrRetention,
@@ -581,6 +601,7 @@ export const updateDraftInvoice = async (req, res) => {
 
     const subtotal = roundMoney(normalizedItems.reduce((acc, item) => acc + Number(item.subtotal || 0), 0));
     const tax = roundMoney(normalizedItems.reduce((acc, item) => acc + Number(item.tax || 0), 0));
+    const { currency, exchangeRate } = parseInvoiceCurrency(req.body);
     const applyRetentions = req.body.applyRetentions === true;
 
     const itbisRetention = applyRetentions ? roundMoney(tax) : 0;
@@ -606,6 +627,8 @@ export const updateDraftInvoice = async (req, res) => {
         invoiceType,
         subtotal,
         tax,
+        currency,
+        exchangeRate,
         applyRetentions,
         itbisRetention,
         isrRetention,

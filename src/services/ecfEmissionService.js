@@ -523,8 +523,85 @@ const buildItem = (line, index) => ({
         },
       }
     : {}),
+  ...(line.foreign
+    ? {
+        OtraMonedaDetalle: {
+          PrecioOtraMoneda: line.foreign.unitPrice,
+          ...(line.foreign.discountCents > 0
+            ? { DescuentoOtraMoneda: fromCents(line.foreign.discountCents) }
+            : {}),
+          MontoItemOtraMoneda: fromCents(line.foreign.amountCents),
+        },
+      }
+    : {}),
   MontoItem: fromCents(line.amountCents),
 });
+
+/*
+ * Factura en otra moneda: la DGII recibe los montos en pesos (calculados
+ * con la tasa) y la sección OtraMoneda con los montos originales.
+ */
+const convertDocumentCurrency = (document, { currency, exchangeRate }) => {
+  if (!currency || currency === "DOP") return document;
+
+  const rate = Number(exchangeRate);
+
+  if (!(rate > 0)) {
+    throw new FiscalNumberError(
+      `El documento está en ${currency}: indica la tasa de cambio para poder enviarlo a la DGII.`
+    );
+  }
+
+  const lines = document.lines.map((line) => {
+    const unitPrice = Math.round(line.unitPrice * rate * 10000) / 10000;
+    const discountCents = Math.round(line.discountCents * rate);
+    const amountCents = Math.round(line.quantity * unitPrice * 100) - discountCents;
+
+    return {
+      ...line,
+      unitPrice,
+      discountCents,
+      amountCents,
+      taxCents: Math.round((amountCents * line.rate) / 100),
+      foreign: line,
+    };
+  });
+
+  return {
+    lines,
+    totalCents: lines.reduce((acc, line) => acc + line.amountCents + line.taxCents, 0),
+    foreign: { currency, rate, document },
+  };
+};
+
+// Sección OtraMoneda en el orden del esquema de la DGII
+const buildOtherCurrency = (document) => {
+  if (!document.foreign) return null;
+
+  const { currency, rate, document: original } = document.foreign;
+  const { exemptCents, rates } = sumByRate(original.lines);
+  const taxed = Object.entries(rates)
+    .map(([itbis, group]) => ({ n: ITBIS_INDICATORS[itbis], ...group }))
+    .sort((a, b) => a.n.localeCompare(b.n));
+
+  const totals = { TipoMoneda: currency, TipoCambio: rate.toFixed(4) };
+
+  if (taxed.length) {
+    totals.MontoGravadoTotalOtraMoneda = fromCents(taxed.reduce((acc, g) => acc + g.baseCents, 0));
+    for (const g of taxed) totals[`MontoGravado${g.n}OtraMoneda`] = fromCents(g.baseCents);
+  }
+
+  if (exemptCents > 0 || !taxed.length) totals.MontoExentoOtraMoneda = fromCents(exemptCents);
+
+  if (taxed.length) {
+    totals.TotalITBISOtraMoneda = fromCents(taxed.reduce((acc, g) => acc + g.taxCents, 0));
+    for (const g of taxed) totals[`TotalITBIS${g.n}OtraMoneda`] = fromCents(g.taxCents);
+  }
+
+  totals.MontoTotalOtraMoneda = fromCents(original.totalCents);
+
+  return totals;
+};
 
 const buildInvoicePayload = ({ invoice, tenant, document, tipoECF, eNcf, sequence }) => ({
   ECF: {
@@ -552,6 +629,7 @@ const buildInvoicePayload = ({ invoice, tenant, document, tipoECF, eNcf, sequenc
         customerName: invoice.customerName,
       }),
       Totales: formatTotals(sumByRate(document.lines), document.totalCents),
+      ...(document.foreign ? { OtraMoneda: buildOtherCurrency(document) } : {}),
     },
     DetallesItems: {
       Item: document.lines.map(buildItem),
@@ -980,7 +1058,7 @@ export const emitInvoiceECF = async ({ tenantId, userId, invoiceId }) => {
 
   try {
     // Antes de reservar el número: un documento que no cuadra gastaría un e-NCF
-    const document = prepareInvoiceDocument(invoice, items);
+    const document = convertDocumentCurrency(prepareInvoiceDocument(invoice, items), invoice);
 
     if (tipoECF === "44" && document.lines.some((line) => line.rate !== 0)) {
       throw new FiscalNumberError(
@@ -1249,6 +1327,7 @@ const buildFiscalNotePayload = ({
         customerName: note.customerName,
       }),
       Totales: formatTotals(sumByRate(document.lines), document.totalCents),
+      ...(document.foreign ? { OtraMoneda: buildOtherCurrency(document) } : {}),
     },
     DetallesItems: {
       Item: document.lines.map(buildItem),
@@ -1291,7 +1370,7 @@ export const emitFiscalNoteECF = async ({ tenantId, userId, noteId }) => {
   const referenceTipoECF = note.referenceENcf.slice(1, 3);
 
   try {
-    const document = noteLinesToDocument(note);
+    const document = convertDocumentCurrency(noteLinesToDocument(note), note);
 
     const { usage, result } = await emitFiscalDocument({
       tenantId,

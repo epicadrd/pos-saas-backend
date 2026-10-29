@@ -98,7 +98,20 @@ export const Invoice = sequelize.define("Invoice", {
     defaultValue: 0,
   },
 
-    applyRetentions: {
+    // Moneda en que se factura; en USD el e-CF se envía en pesos con la tasa
+  currency: {
+    type: DataTypes.STRING(3),
+    allowNull: false,
+    defaultValue: "DOP",
+  },
+
+  exchangeRate: {
+    type: DataTypes.DECIMAL(12, 4),
+    allowNull: true,
+    defaultValue: null,
+  },
+
+  applyRetentions: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: false,

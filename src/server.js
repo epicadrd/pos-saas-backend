@@ -45,6 +45,7 @@ import {
 import { ensureCustomerLinkColumns } from "./utils/customerLinkMigration.js";
 import { ensurePosSaleEcfColumns } from "./utils/posSaleEcfMigration.js";
 import { ensureEcfTypeColumns } from "./utils/ecfTypesMigration.js";
+import { ensureInvoiceCurrencyColumns } from "./utils/invoiceCurrencyMigration.js";
 import { startECFStatusPoller } from "./services/ecfStatusPoller.js";
 import fiscalNoteRoutes from "./routes/fiscalNoteRoutes.js";
 
@@ -210,6 +211,9 @@ const startServer = async () => {
 
     await ensureEcfTypeColumns(sequelize);
     logger.info("ECF_TYPES_READY");
+
+    await ensureInvoiceCurrencyColumns(sequelize);
+    logger.info("INVOICE_CURRENCY_READY");
 
     await sequelize.sync();
     logger.info("MODELS_SYNCED");

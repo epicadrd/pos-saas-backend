@@ -31,6 +31,10 @@ export const FiscalNote = sequelize.define(
     customerName: { type: DataTypes.STRING(150), allowNull: true },
     customerRnc: { type: DataTypes.STRING(30), allowNull: true },
 
+    // Moneda y tasa de la factura modificada
+    currency: { type: DataTypes.STRING(3), allowNull: false, defaultValue: "DOP" },
+    exchangeRate: { type: DataTypes.DECIMAL(12, 4), allowNull: true },
+
     lines: { type: DataTypes.JSON, allowNull: false },
     subtotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     tax: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },

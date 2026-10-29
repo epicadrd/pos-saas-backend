@@ -268,6 +268,8 @@ export const createFiscalNote = async (req, res) => {
       referenceDate: invoice.invoiceDate || todayInDR(),
       customerName: invoice.customerName,
       customerRnc: invoice.customerRnc,
+      currency: invoice.currency || "DOP",
+      exchangeRate: invoice.exchangeRate,
       lines,
       subtotal,
       tax,
