@@ -244,7 +244,8 @@ const INVOICE_TYPES = [
   "government",
 ];
 
-export const INVOICE_CURRENCIES = ["DOP", "USD"];
+// USD queda desactivado hasta que reportes y cuentas por cobrar conviertan a pesos
+export const INVOICE_CURRENCIES = ["DOP"];
 
 // En USD la tasa es obligatoria para poder enviar el e-CF en pesos
 const parseInvoiceCurrency = (body) => {
