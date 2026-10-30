@@ -44,7 +44,7 @@ import {
 } from "./utils/tenantEntitlementsMigration.js";
 import { ensureCustomerLinkColumns } from "./utils/customerLinkMigration.js";
 import { ensurePosSaleEcfColumns } from "./utils/posSaleEcfMigration.js";
-import { ensureEcfTypeColumns } from "./utils/ecfTypesMigration.js";
+import { ensureEcfTypeColumns, ensureNonExpiringSequences } from "./utils/ecfTypesMigration.js";
 import { ensureInvoiceCurrencyColumns } from "./utils/invoiceCurrencyMigration.js";
 import { startECFStatusPoller } from "./services/ecfStatusPoller.js";
 import fiscalNoteRoutes from "./routes/fiscalNoteRoutes.js";
@@ -210,6 +210,7 @@ const startServer = async () => {
     logger.info("POS_SALE_ECF_READY");
 
     await ensureEcfTypeColumns(sequelize);
+    await ensureNonExpiringSequences(sequelize);
     logger.info("ECF_TYPES_READY");
 
     await ensureInvoiceCurrencyColumns(sequelize);

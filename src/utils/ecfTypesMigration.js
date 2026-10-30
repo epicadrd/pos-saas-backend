@@ -1,3 +1,5 @@
+import { NON_EXPIRING_TYPES, NO_EXPIRATION_DATE } from "../services/fiscalSequenceService.js";
+
 /*
  * Amplía los ENUM para los nuevos tipos de e-CF. sequelize.sync() no
  * altera tablas existentes, por eso se hace aquí de forma idempotente.
@@ -40,4 +42,21 @@ export const ensureEcfTypeColumns = async (sequelize) => {
       `ALTER TABLE \`${change.table}\` MODIFY \`${change.column}\` ENUM(${values}) ${change.definition}`
     );
   }
+};
+
+/*
+ * Los E32 y E34 no vencen. Los rangos cargados antes desde el archivo de
+ * la DGII quedaron con la fecha de solicitud como vencimiento.
+ */
+export const ensureNonExpiringSequences = async (sequelize) => {
+  const tables = (await sequelize.getQueryInterface().showAllTables()).map((table) =>
+    String(typeof table === "string" ? table : table.tableName).toLowerCase()
+  );
+
+  if (!tables.includes("fiscalsequences")) return;
+
+  await sequelize.query(
+    "UPDATE `FiscalSequences` SET `expirationDate` = :date WHERE `tipoECF` IN (:types) AND `expirationDate` <> :date",
+    { replacements: { date: NO_EXPIRATION_DATE, types: NON_EXPIRING_TYPES } }
+  );
 };

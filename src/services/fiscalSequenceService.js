@@ -29,6 +29,10 @@ export const ECF_TYPES = {
   47: "Pagos al Exterior",
 };
 
+// La DGII no les pone vencimiento a E32 ni E34; se guardan con esta fecha
+export const NON_EXPIRING_TYPES = ["32", "34"];
+export const NO_EXPIRATION_DATE = "9999-12-31";
+
 // El e-NCF es E + tipo (2) + secuencia (10)
 export const MAX_SEQUENCE_NUMBER = 9999999999;
 
@@ -149,6 +153,11 @@ const normalizeRange = ({ tipoECF, start, end, expirationDate }) => {
     throw new FiscalNumberError(
       "El número inicial no puede ser mayor que el número final."
     );
+  }
+
+  // El archivo de la DGII trae la fecha de solicitud en estas filas: no es vencimiento
+  if (NON_EXPIRING_TYPES.includes(type)) {
+    return { tipoECF: type, rangeStart, rangeEnd, expirationDate: NO_EXPIRATION_DATE };
   }
 
   if (!isValidDateOnly(expirationDate)) {
@@ -734,6 +743,11 @@ export const updateFiscalSequenceExpiration = async ({
 
   return sequelize.transaction(async (transaction) => {
     const sequence = await findTenantSequence(tenantId, id, transaction);
+
+    if (NON_EXPIRING_TYPES.includes(sequence.tipoECF)) {
+      throw new FiscalNumberError(`Los E${sequence.tipoECF} no tienen fecha de vencimiento.`);
+    }
+
     return sequence.update({ expirationDate }, { transaction });
   });
 };
