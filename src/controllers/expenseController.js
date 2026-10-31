@@ -1,5 +1,5 @@
 import { Op, fn, col } from "sequelize";
-import { Expense, Supplier } from "../models/index.js";
+import { Expense, ReceivedDocument, Supplier } from "../models/index.js";
 import { logActivity } from "../utils/activityLogger.js";
 import {
   sanitizeString,
@@ -775,6 +775,11 @@ export const createExpense = async (req, res) => {
 
     await validateSupplierTenant(supplierId, tenantId);
 
+    const receivedDocumentId = sanitizeInteger(req.body.receivedDocumentId, 0);
+    const receivedDocument = receivedDocumentId
+      ? await ReceivedDocument.findOne({ where: { id: receivedDocumentId, tenantId } })
+      : null;
+
     const expense = await Expense.create({
       tenantId,
       expenseNumber: await buildExpenseNumber(tenantId),
@@ -792,6 +797,8 @@ export const createExpense = async (req, res) => {
       createdBy: req.user.id,
       updatedBy: req.user.id,
     });
+
+    await receivedDocument?.update({ status: "registered", expenseId: expense.id });
 
     await logActivity({
       tenantId,
@@ -921,6 +928,12 @@ export const deleteExpense = async (req, res) => {
     }
 
     await expense.destroy();
+
+    // Si venía de un comprobante recibido, vuelve a quedar pendiente
+    await ReceivedDocument.update(
+      { status: "pending", expenseId: null },
+      { where: { tenantId, expenseId: expense.id } }
+    );
 
     await logActivity({
       tenantId,

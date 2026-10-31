@@ -10,6 +10,10 @@ import {
   importExpenseFromDgii,
   exportMonthlyExpenses,
 } from "../controllers/expenseController.js";
+import {
+  getReceivedDocuments,
+  setReceivedDocumentIgnored,
+} from "../controllers/receivedDocumentController.js";
 
 const router = express.Router();
 
@@ -22,6 +26,8 @@ router.get(
   requireRole("master", "admin"),
   exportMonthlyExpenses
 );
+router.get("/received", protect, requireActiveSubscription, requireRole("master", "admin"), getReceivedDocuments);
+router.patch("/received/:id", protect, requireActiveSubscription, requireRole("master", "admin"), setReceivedDocumentIgnored);
 router.post("/", protect, requireActiveSubscription, requireRole("master", "admin"), createExpense);
 router.post("/import-dgii", protect, requireActiveSubscription, requireRole("master", "admin"), importExpenseFromDgii);
 router.put("/:id", protect, requireActiveSubscription, requireRole("master", "admin"), updateExpense);

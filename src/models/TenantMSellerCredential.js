@@ -52,6 +52,21 @@ export const TenantMSellerCredential = sequelize.define(
       allowNull: false,
     },
 
+    webhookSecretEncrypted: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+
+    webhookSecretIv: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+
+    webhookSecretAuthTag: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+
     environment: {
       type: DataTypes.STRING(50),
       allowNull: false,

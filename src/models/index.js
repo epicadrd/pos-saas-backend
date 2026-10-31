@@ -32,6 +32,7 @@ import { FiscalSequence } from "./FiscalSequence.js";
 import { FiscalNumberUsage } from "./FiscalNumberUsage.js";
 import { FiscalNote } from "./FiscalNote.js";
 import { TenantMSellerCredential } from "./TenantMSellerCredential.js";
+import { ReceivedDocument } from "./ReceivedDocument.js";
 
 Invoice.belongsTo(User, {
   foreignKey: "createdBy",
@@ -206,6 +207,7 @@ export {
   ElectronicInvoice,
   ElectronicInvoicingRequest,
   TenantMSellerCredential,
+  ReceivedDocument,
   FiscalSequence,
   FiscalNumberUsage,
   Quote,
