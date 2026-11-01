@@ -168,6 +168,44 @@ export const deleteCustomer = async (req, res) => {
   }
 };
 
+export const reactivateCustomer = async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const { id } = req.params;
+
+    const customer = await Customer.findOne({
+      where: { id, tenantId },
+    });
+
+    if (!customer) {
+      return res.status(404).json({ message: "Cliente no encontrado" });
+    }
+
+    // Mientras estuvo inactivo se pudo crear otro cliente con el mismo RNC
+    if (normalizeRnc(customer.rnc)) {
+      const exists = await Customer.findOne({
+        where: {
+          tenantId,
+          isActive: true,
+          id: { [Op.ne]: id },
+          [Op.and]: [rncMatches("rnc", customer.rnc)],
+        },
+      });
+
+      if (exists) {
+        return res.status(400).json({ message: "Ya existe otro cliente activo con este RNC/Cédula" });
+      }
+    }
+
+    await customer.update({ isActive: true });
+
+    return res.json({ message: "Cliente reactivado correctamente", customer });
+  } catch (error) {
+    console.log("REACTIVATE CUSTOMER ERROR:", error);
+    return res.status(500).json({ message: "Error reactivando cliente" });
+  }
+};
+
 const PROFILE_LIMIT = 500;
 
 const todayDateOnly = () => {
