@@ -183,7 +183,11 @@ const normalizeQuoteItems = async ({
       productName: productName.trim(),
       description:
         sanitizeString(
-          item.description || product?.description || "",
+          // Si la línea trae descripción (aunque sea vacía) se respeta;
+          // la del producto solo se usa cuando no se envió el campo
+          (typeof item.description === "string"
+            ? item.description
+            : product?.description) || "",
           1000
         ) || null,
       quantity,
