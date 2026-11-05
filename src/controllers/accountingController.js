@@ -1,5 +1,12 @@
 import { Op, fn, col, literal } from "sequelize";
 import { Invoice, Receipt, PurchaseOrder, Expense } from "../models/index.js";
+import {
+  sumInvoicesInDop,
+  sumReceiptsInDop,
+  sumReceiptDopAttr,
+  receiptCurrencySql,
+  receiptRateSql,
+} from "../utils/currencyAmounts.js";
 
 const money = (value) => Number(value || 0);
 
@@ -35,7 +42,7 @@ export const getAccountingSummary = async (req, res) => {
       recentReceipts,
       expensesMonth,
     ] = await Promise.all([
-      Invoice.sum("total", {
+      sumInvoicesInDop(Invoice, "total", {
         where: {
           tenantId,
           status: { [Op.in]: activeInvoiceStatuses },
@@ -43,7 +50,7 @@ export const getAccountingSummary = async (req, res) => {
         },
       }),
 
-      Receipt.sum("amount", {
+      sumReceiptsInDop(Receipt, {
         where: {
           tenantId,
           status: "paid",
@@ -51,7 +58,7 @@ export const getAccountingSummary = async (req, res) => {
         },
       }),
 
-      Invoice.sum("balance", {
+      sumInvoicesInDop(Invoice, "balance", {
         where: {
           tenantId,
           status: { [Op.in]: ["issued", "partial"] },
@@ -59,7 +66,7 @@ export const getAccountingSummary = async (req, res) => {
         },
       }),
 
-      Invoice.sum("balance", {
+      sumInvoicesInDop(Invoice, "balance", {
         where: {
           tenantId,
           status: { [Op.in]: ["issued", "partial"] },
@@ -98,7 +105,7 @@ export const getAccountingSummary = async (req, res) => {
         },
         attributes: [
           [fn("DATE", col("createdAt")), "date"],
-          [fn("SUM", col("amount")), "total"],
+          [sumReceiptDopAttr(), "total"],
         ],
         group: [literal("DATE(createdAt)")],
         order: [[literal("DATE(createdAt)"), "ASC"]],
@@ -117,6 +124,8 @@ export const getAccountingSummary = async (req, res) => {
           "receiptNumber",
           "customerName",
           "amount",
+          [literal(receiptCurrencySql()), "currency"],
+          [literal(receiptRateSql()), "exchangeRate"],
           "paymentMethod",
           "createdAt",
         ],

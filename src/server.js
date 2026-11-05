@@ -49,6 +49,7 @@ import { ensureInvoiceCurrencyColumns } from "./utils/invoiceCurrencyMigration.j
 import { ensureWebhookSecretColumns } from "./utils/receivedDocumentMigration.js";
 import { startECFStatusPoller } from "./services/ecfStatusPoller.js";
 import fiscalNoteRoutes from "./routes/fiscalNoteRoutes.js";
+import exchangeRateRoutes from "./routes/exchangeRateRoutes.js";
 
 dotenv.config();
 
@@ -167,6 +168,7 @@ app.use(
 app.use("/api/electronic-invoices", electronicInvoiceRoutes);
 app.use("/api/fiscal-sequences", fiscalSequenceRoutes);
 app.use("/api/fiscal-notes", fiscalNoteRoutes);
+app.use("/api/exchange-rates", exchangeRateRoutes);
 app.use("/api/quotes", quoteRoutes);
 app.use("/api/delivery-notes", deliveryNoteRoutes);
 app.use("/api/receipts", receiptRoutes);

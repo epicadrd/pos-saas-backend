@@ -7,6 +7,12 @@ import {
   InvoiceItem,
   Supplier,
 } from "../models/index.js";
+import {
+  sumInvoicesInDop,
+  sumReceiptsInDop,
+  sumInvoiceDopAttr,
+  sumInvoiceItemDopAttr,
+} from "../utils/currencyAmounts.js";
 
 const money = (value) => Number(value || 0);
 
@@ -53,7 +59,7 @@ export const getReportsOverview = async (req, res) => {
       lowStockProducts,
       topProducts,
     ] = await Promise.all([
-      Invoice.sum("total", {
+      sumInvoicesInDop(Invoice, "total", {
         where: {
           tenantId,
           status: { [Op.in]: activeInvoiceStatuses },
@@ -61,7 +67,7 @@ export const getReportsOverview = async (req, res) => {
         },
       }),
 
-      Receipt.sum("amount", {
+      sumReceiptsInDop(Receipt, {
         where: {
           tenantId,
           status: "paid",
@@ -82,7 +88,7 @@ export const getReportsOverview = async (req, res) => {
         },
       }),
 
-      Invoice.sum("balance", {
+      sumInvoicesInDop(Invoice, "balance", {
         where: {
           tenantId,
           status: { [Op.in]: ["issued", "partial"] },
@@ -147,7 +153,7 @@ export const getReportsOverview = async (req, res) => {
         },
         attributes: [
           [fn("DATE", col("createdAt")), "date"],
-          [fn("SUM", col("total")), "total"],
+          [sumInvoiceDopAttr("total"), "total"],
         ],
         group: [literal("DATE(createdAt)")],
         order: [[literal("DATE(createdAt)"), "ASC"]],
@@ -217,6 +223,8 @@ export const getReportsOverview = async (req, res) => {
           "total",
           "balance",
           "status",
+          "currency",
+          "exchangeRate",
           "createdAt",
         ],
       }),
@@ -281,7 +289,7 @@ export const getReportsOverview = async (req, res) => {
         attributes: [
           "productName",
           [fn("SUM", col("quantity")), "quantity"],
-          [fn("SUM", col("InvoiceItem.total")), "total"],
+          [sumInvoiceItemDopAttr("total"), "total"],
         ],
         group: ["productName"],
         order: [[literal("total"), "DESC"]],

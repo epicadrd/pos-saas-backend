@@ -244,8 +244,9 @@ const INVOICE_TYPES = [
   "government",
 ];
 
-// USD queda desactivado hasta que reportes y cuentas por cobrar conviertan a pesos
-export const INVOICE_CURRENCIES = ["DOP"];
+// En USD los montos quedan en dólares; los resúmenes los convierten a pesos
+// con la tasa de la factura (ver utils/currencyAmounts.js)
+export const INVOICE_CURRENCIES = ["DOP", "USD"];
 
 // En USD la tasa es obligatoria para poder enviar el e-CF en pesos
 const parseInvoiceCurrency = (body) => {
@@ -258,6 +259,11 @@ const parseInvoiceCurrency = (body) => {
     Number.isFinite(rate) && rate > 0 && rate < 1000
       ? Math.round(rate * 10000) / 10000
       : null;
+
+  // Sin tasa no se puede enviar el e-CF ni sumar la factura en pesos
+  if (!exchangeRate) {
+    throw new Error("Indica la tasa de cambio del dólar para la factura en US$");
+  }
 
   return { currency, exchangeRate };
 };

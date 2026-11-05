@@ -1,5 +1,11 @@
 import { Op, fn, col, literal } from "sequelize";
 import { Invoice, Receipt } from "../models/index.js";
+import {
+  sumInvoicesInDop,
+  sumReceiptDopAttr,
+  receiptCurrencySql,
+  receiptRateSql,
+} from "../utils/currencyAmounts.js";
 
 const money = (value) => Number(value || 0);
 
@@ -118,7 +124,7 @@ export const getAccountsReceivable = async (req, res) => {
         ],
       }),
 
-      Invoice.sum("balance", {
+      sumInvoicesInDop(Invoice, "balance", {
         where: {
           tenantId,
           status: { [Op.in]: ["issued", "partial"] },
@@ -126,7 +132,7 @@ export const getAccountsReceivable = async (req, res) => {
         },
       }),
 
-      Invoice.sum("balance", {
+      sumInvoicesInDop(Invoice, "balance", {
         where: {
           tenantId,
           status: { [Op.in]: ["issued", "partial"] },
@@ -151,7 +157,7 @@ export const getAccountsReceivable = async (req, res) => {
         },
       }),
 
-      Invoice.sum("balance", {
+      sumInvoicesInDop(Invoice, "balance", {
         where: {
           tenantId,
           status: { [Op.in]: ["issued", "partial"] },
@@ -170,7 +176,7 @@ export const getAccountsReceivable = async (req, res) => {
         },
         attributes: [
           [fn("DATE", col("createdAt")), "date"],
-          [fn("SUM", col("amount")), "total"],
+          [sumReceiptDopAttr(), "total"],
         ],
         group: [literal("DATE(createdAt)")],
         order: [[literal("DATE(createdAt)"), "ASC"]],
@@ -190,6 +196,8 @@ export const getAccountsReceivable = async (req, res) => {
           "receiptNumber",
           "customerName",
           "amount",
+          [literal(receiptCurrencySql()), "currency"],
+          [literal(receiptRateSql()), "exchangeRate"],
           "paymentMethod",
           "createdAt",
         ],

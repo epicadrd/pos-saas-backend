@@ -1,5 +1,6 @@
-import { Op } from "sequelize";
+import { Op, literal } from "sequelize";
 import { Customer, Invoice, Quote, Receipt } from "../models/index.js";
+import { receiptCurrencySql, receiptRateSql } from "../utils/currencyAmounts.js";
 import {
   buildCustomerDocumentWhere,
   normalizeRnc,
@@ -266,6 +267,8 @@ export const getCustomerProfile = async (req, res) => {
           "amountPaid",
           "balance",
           "status",
+          "currency",
+          "exchangeRate",
           "createdAt",
         ],
         order: [["createdAt", "DESC"]],
@@ -314,6 +317,8 @@ export const getCustomerProfile = async (req, res) => {
         "invoiceId",
         "concept",
         "amount",
+        [literal(receiptCurrencySql()), "currency"],
+        [literal(receiptRateSql()), "exchangeRate"],
         "paymentMethod",
         "reference",
         "receiptDate",
@@ -360,16 +365,22 @@ export const getCustomerProfile = async (req, res) => {
     const activeInvoices = invoiceRows.filter((row) => row.status !== "cancelled");
     const paidReceipts = receiptRows.filter((row) => row.status === "paid");
 
+    // Los montos en US$ se suman en pesos con la tasa de su factura
+    const toDop = (row, field) =>
+      row.currency === "USD" && toNumber(row.exchangeRate) > 0
+        ? toNumber(row[field]) * toNumber(row.exchangeRate)
+        : toNumber(row[field]);
+
     const summary = {
       invoicesCount: activeInvoices.length,
-      totalInvoiced: activeInvoices.reduce((acc, row) => acc + toNumber(row.total), 0),
-      pendingBalance: activeInvoices.reduce((acc, row) => acc + toNumber(row.balance), 0),
+      totalInvoiced: activeInvoices.reduce((acc, row) => acc + toDop(row, "total"), 0),
+      pendingBalance: activeInvoices.reduce((acc, row) => acc + toDop(row, "balance"), 0),
       overdueCount: invoiceRows.filter((row) => row.isOverdue).length,
       quotesCount: quoteRows.length,
       quotesTotal: quoteRows.reduce((acc, row) => acc + toNumber(row.total), 0),
       quotesWon: quoteRows.filter((row) => ["approved", "converted"].includes(row.status)).length,
       receiptsCount: paidReceipts.length,
-      totalReceived: paidReceipts.reduce((acc, row) => acc + toNumber(row.amount), 0),
+      totalReceived: paidReceipts.reduce((acc, row) => acc + toDop(row, "amount"), 0),
       lastActivity:
         [invoiceRows[0]?.createdAt, quoteRows[0]?.createdAt, receiptRows[0]?.createdAt]
           .filter(Boolean)
