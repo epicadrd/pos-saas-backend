@@ -43,6 +43,7 @@ import {
   ensureTenantEntitlementColumns,
 } from "./utils/tenantEntitlementsMigration.js";
 import { ensureCustomerLinkColumns } from "./utils/customerLinkMigration.js";
+import { ensureCustomerEmailsColumn } from "./utils/customerEmailsMigration.js";
 import { ensurePosSaleEcfColumns } from "./utils/posSaleEcfMigration.js";
 import { ensureEcfTypeColumns, ensureNonExpiringSequences } from "./utils/ecfTypesMigration.js";
 import { ensureInvoiceCurrencyColumns } from "./utils/invoiceCurrencyMigration.js";
@@ -208,6 +209,9 @@ const startServer = async () => {
 
     await ensureCustomerLinkColumns(sequelize);
     logger.info("CUSTOMER_LINKS_READY");
+
+    await ensureCustomerEmailsColumn(sequelize);
+    logger.info("CUSTOMER_EMAILS_READY");
 
     await ensurePosSaleEcfColumns(sequelize);
     logger.info("POS_SALE_ECF_READY");

@@ -8,9 +8,13 @@ import {
 } from "../services/customerLinkService.js";
 import {
   sanitizeString,
-  sanitizeEmail,
   sanitizePhone,
 } from "../utils/sanitize.js";
+import {
+  CustomerEmailError,
+  mergePrimaryEmail,
+  normalizeCustomerEmails,
+} from "../utils/customerEmails.js";
 
 export const getCustomers = async (req, res) => {
   try {
@@ -29,6 +33,7 @@ export const getCustomers = async (req, res) => {
         { rnc: { [Op.like]: `%${search}%` } },
         { phone: { [Op.like]: `%${search}%` } },
         { email: { [Op.like]: `%${search}%` } },
+        { emails: { [Op.like]: `%${search}%` } },
       ];
     }
 
@@ -51,7 +56,9 @@ export const createCustomer = async (req, res) => {
     const name = sanitizeString(req.body.name, 120);
     const rnc = sanitizeString(req.body.rnc, 30);
     const phone = sanitizePhone(req.body.phone);
-    const email = sanitizeEmail(req.body.email);
+    const normalized = normalizeCustomerEmails(req.body.emails, req.body.email);
+    const email = normalized.email;
+    const emails = normalized.emails ?? (email ? [email] : []);
     const address = sanitizeString(req.body.address, 255);
 
     if (!name) {
@@ -78,6 +85,7 @@ export const createCustomer = async (req, res) => {
       rnc: rnc || null,
       phone: phone || null,
       email: email || null,
+      emails,
       address: address || null,
     });
 
@@ -86,6 +94,10 @@ export const createCustomer = async (req, res) => {
       customer,
     });
   } catch (error) {
+    if (error instanceof CustomerEmailError) {
+      return res.status(400).json({ message: error.message });
+    }
+
     console.log("CREATE CUSTOMER ERROR:", error);
     return res.status(500).json({ message: "Error creando cliente" });
   }
@@ -99,7 +111,7 @@ export const updateCustomer = async (req, res) => {
     const name = sanitizeString(req.body.name, 120);
     const rnc = sanitizeString(req.body.rnc, 30);
     const phone = sanitizePhone(req.body.phone);
-    const email = sanitizeEmail(req.body.email);
+    const normalized = normalizeCustomerEmails(req.body.emails, req.body.email);
     const address = sanitizeString(req.body.address, 255);
 
     const customer = await Customer.findOne({
@@ -129,11 +141,18 @@ export const updateCustomer = async (req, res) => {
       }
     }
 
+    // Sin lista (formulario rápido de Facturas): cambia solo el principal
+    const { email, emails } =
+      normalized.emails === undefined
+        ? mergePrimaryEmail(customer.emails, customer.email, normalized.email)
+        : normalized;
+
     await customer.update({
       name,
       rnc: rnc || null,
       phone: phone || null,
       email: email || null,
+      emails,
       address: address || null,
     });
 
@@ -142,6 +161,10 @@ export const updateCustomer = async (req, res) => {
       customer,
     });
   } catch (error) {
+    if (error instanceof CustomerEmailError) {
+      return res.status(400).json({ message: error.message });
+    }
+
     console.log("UPDATE CUSTOMER ERROR:", error);
     return res.status(500).json({ message: "Error actualizando cliente" });
   }
