@@ -10,6 +10,7 @@ import {
   ElectronicInvoice,
   FiscalNumberUsage,
   FiscalSequence,
+  ElectronicInvoicingRequest,
 } from "../models/index.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { resolveCustomerId } from "../services/customerLinkService.js";
@@ -673,6 +674,21 @@ export const updateDraftInvoice = async (req, res) => {
   }
 };
 
+// La empresa emite e-CF: país DO, solicitud aceptada y facturación activada
+const tenantEmitsEcf = async (tenant, transaction) => {
+  if (tenant?.country !== "DO" || tenant.electronicInvoicingEnabled !== true) {
+    return false;
+  }
+
+  const activeRequest = await ElectronicInvoicingRequest.findOne({
+    where: { tenantId: tenant.id, status: "active" },
+    attributes: ["id"],
+    transaction,
+  });
+
+  return Boolean(activeRequest);
+};
+
 export const issueDraftInvoice = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -721,7 +737,7 @@ export const issueDraftInvoice = async (req, res) => {
       tenantId,
       transaction,
       shouldValidateStock: true,
-      taxConfig: tenant
+      taxConfig: getInvoiceTaxConfig(tenant, invoice.invoiceType),
     });
 
     const paid = sanitizeNumber(amountPaid);
@@ -748,21 +764,41 @@ export const issueDraftInvoice = async (req, res) => {
     });
   }
 
+    // Queda marcada "e-CF no emitido" hasta que la DGII asigne el e-NCF.
+    // Si el envío no llega a hacerse, la lista muestra el botón "Emitir e-CF".
+    const emitsEcf = !invoice.eNcf && (await tenantEmitsEcf(tenant, transaction));
+
     await invoice.update(
       {
         status: finalStatus,
         amountPaid: paid,
-        balance: Number(invoice.total) - paid,
+        balance: roundMoney(Number(invoice.total) - paid),
+        ...(emitsEcf ? { electronicInvoiceStatus: "Error" } : {}),
         updatedBy: userId,
       },
       { transaction }
     );
+
+    await logActivity({
+      tenantId,
+      userId,
+      module: "invoices",
+      action: "ISSUE_DRAFT_INVOICE",
+      description: `${req.user.email} emitió el borrador ${invoice.invoiceNumber}`,
+      metadata: {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        total: invoice.total,
+      },
+      transaction,
+    });
 
     await transaction.commit();
 
     return res.json({
       message: "Borrador emitido correctamente",
       invoice,
+      requiresEcf: emitsEcf,
     });
   } catch (error) {
     await transaction.rollback();
