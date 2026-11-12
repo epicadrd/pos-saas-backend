@@ -21,6 +21,7 @@ import {
 } from "../utils/sanitize.js";
 import { validateLogoDataUrl } from "../utils/fileValidators.js";
 import { logSecurityEvent } from "../utils/securityLogger.js";
+import { logActivity } from "../utils/activityLogger.js";
 import { logger } from "../utils/secureLogger.js";
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -535,6 +536,18 @@ export const updateTenant = async (req, res) => {
       }
     }
 
+    // Apagar el e-CF exige aceptar el aviso de la DGII (queda en el historial)
+    if (
+      electronicInvoicingEnabled === false &&
+      tenant.electronicInvoicingEnabled === true &&
+      req.body.ecfDisableAccepted !== true
+    ) {
+      return res.status(400).json({
+        message:
+          "Para desactivar la facturación electrónica debes aceptar el aviso de responsabilidad ante la DGII.",
+      });
+    }
+
     resolvedElectronicInvoicingEnabled =
       electronicInvoicingEnabled;
   }
@@ -600,6 +613,25 @@ export const updateTenant = async (req, res) => {
               ? defaultInvoiceNotes?.trim() || null
               : tenant.defaultInvoiceNotes,
       });
+
+    // Constancia visible para la empresa de quién encendió o apagó el e-CF
+    if (previousTenantData.electronicInvoicingEnabled !== tenant.electronicInvoicingEnabled) {
+      const disabled = tenant.electronicInvoicingEnabled !== true;
+
+      await logActivity({
+        tenantId,
+        userId: req.user.id,
+        module: "invoices",
+        action: disabled ? "DISABLE_ECF" : "ENABLE_ECF",
+        description: disabled
+          ? `${req.user.email} desactivó la facturación electrónica y aceptó el aviso de responsabilidad ante la DGII`
+          : `${req.user.email} activó la facturación electrónica`,
+        metadata: {
+          electronicInvoicingEnabled: tenant.electronicInvoicingEnabled,
+          ...(disabled ? { ecfDisableAccepted: true, acceptedAt: new Date().toISOString() } : {}),
+        },
+      });
+    }
 
     await logSecurityEvent({
       req,
