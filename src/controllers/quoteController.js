@@ -17,6 +17,7 @@ import {
   sanitizeInteger,
 } from "../utils/sanitize.js";
 import { resolveCustomerId } from "../services/customerLinkService.js";
+import { percentLineDiscountToAmount } from "../utils/lineDiscount.js";
 
 const generateQuoteNumber = async (tenantId, transaction) => {
   const count = await Quote.count({
@@ -527,7 +528,13 @@ export const convertQuoteToInvoice = async (req, res) => {
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.price,
-          discount: item.discount,
+          // En la cotización es %, en la factura es monto en pesos
+          discount: percentLineDiscountToAmount({
+            quantity: item.quantity,
+            unitPrice: item.price,
+            subtotal: item.subtotal,
+            discount: item.discount,
+          }),
           subtotal: item.subtotal,
           tax: item.tax,
           isTaxable: item.isTaxable,

@@ -17,6 +17,7 @@ import {
   sanitizeInteger,
 } from "../utils/sanitize.js";
 import { resolveCustomerId } from "../services/customerLinkService.js";
+import { percentLineDiscountToAmount } from "../utils/lineDiscount.js";
 
 
 const generateDeliveryNoteNumber = async (tenantId, transaction) => {
@@ -653,7 +654,13 @@ export const convertDeliveryNoteToInvoice = async (req, res) => {
           description: item.description,
           quantity: item.dispatchedQuantity,
           unitPrice: item.unitPrice,
-          discount: item.discount,
+          // En el conduce es %, en la factura es monto en pesos
+          discount: percentLineDiscountToAmount({
+            quantity: item.dispatchedQuantity,
+            unitPrice: item.unitPrice,
+            subtotal: item.subtotal,
+            discount: item.discount,
+          }),
           subtotal: item.subtotal,
           tax: item.tax,
           isTaxable: item.isTaxable,
