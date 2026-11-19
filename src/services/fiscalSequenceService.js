@@ -4,6 +4,7 @@ import {
   Tenant,
   Invoice,
   PosSale,
+  FiscalNote,
   FiscalSequence,
   FiscalNumberUsage,
 } from "../models/index.js";
@@ -39,6 +40,8 @@ export const MAX_SEQUENCE_NUMBER = 9999999999;
 const DOCUMENT_MODELS = {
   invoice: Invoice,
   pos_sale: PosSale,
+  // Notas de crédito (E34) y débito (E33)
+  fiscal_note: FiscalNote,
 };
 
 export class FiscalNumberError extends Error {
