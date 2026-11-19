@@ -386,7 +386,9 @@ const buildIdDoc = ({
     ...(tipoPago === "2" && fechaLimitePago
       ? { FechaLimitePago: dateOnlyToDGII(fechaLimitePago) }
       : {}),
-    TotalPaginas: 1,
+    // Sin TotalPaginas: la DGII solo lo acepta junto con la sección
+    // Paginación y con valor > 1; enviarlo en 1 deja el e-CF en
+    // "Aceptado Condicional" (código 1193)
   };
 };
 
