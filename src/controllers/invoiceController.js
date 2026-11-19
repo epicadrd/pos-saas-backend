@@ -249,6 +249,12 @@ const INVOICE_TYPES = [
 // con la tasa de la factura (ver utils/currencyAmounts.js)
 export const INVOICE_CURRENCIES = ["DOP", "USD"];
 
+// Cómo pagó el cliente; se imprime en la factura (opcional)
+export const INVOICE_PAYMENT_METHODS = ["cash", "card", "transfer", "payment_link"];
+
+const parsePaymentMethod = (value) =>
+  INVOICE_PAYMENT_METHODS.includes(value) ? value : null;
+
 // En USD la tasa es obligatoria para poder enviar el e-CF en pesos
 const parseInvoiceCurrency = (body) => {
   const currency = INVOICE_CURRENCIES.includes(body.currency) ? body.currency : "DOP";
@@ -476,6 +482,7 @@ export const createInvoice = async (req, res) => {
         tax,
         currency,
         exchangeRate,
+        paymentMethod: parsePaymentMethod(req.body.paymentMethod),
         applyRetentions,
         itbisRetention,
         isrRetention,
@@ -637,6 +644,7 @@ export const updateDraftInvoice = async (req, res) => {
         tax,
         currency,
         exchangeRate,
+        paymentMethod: parsePaymentMethod(req.body.paymentMethod),
         applyRetentions,
         itbisRetention,
         isrRetention,
@@ -1001,10 +1009,14 @@ export const markInvoiceAsPaid = async (req, res) => {
       return res.status(400).json({ message: "Primero debes emitir el borrador" });
     }
 
+    const paymentMethod = parsePaymentMethod(req.body?.paymentMethod);
+
     await invoice.update({
       status: "paid",
       amountPaid: invoice.total,
       balance: 0,
+      // Si al cobrar se indica cómo pagó, reemplaza el que tenía la factura
+      ...(paymentMethod ? { paymentMethod } : {}),
       updatedBy: userId,
     });
 

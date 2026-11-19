@@ -1,10 +1,11 @@
 import { DataTypes } from "sequelize";
 
 /*
- * Agrega la moneda y la tasa de cambio a facturas y notas. sequelize.sync()
- * no altera tablas existentes, por eso se agregan aquí de forma idempotente.
+ * Agrega la moneda y la tasa de cambio a facturas, notas y cotizaciones, y
+ * el método de pago a las facturas. sequelize.sync() no altera tablas
+ * existentes, por eso se agregan aquí de forma idempotente.
  */
-const COLUMNS = {
+const CURRENCY_COLUMNS = {
   currency: {
     type: DataTypes.STRING(3),
     allowNull: false,
@@ -17,6 +18,15 @@ const COLUMNS = {
   },
 };
 
+const TABLE_COLUMNS = {
+  Invoices: {
+    ...CURRENCY_COLUMNS,
+    paymentMethod: { type: DataTypes.STRING(20), allowNull: true, defaultValue: null },
+  },
+  FiscalNotes: CURRENCY_COLUMNS,
+  Quotes: CURRENCY_COLUMNS,
+};
+
 export const ensureInvoiceCurrencyColumns = async (sequelize) => {
   const queryInterface = sequelize.getQueryInterface();
 
@@ -25,13 +35,13 @@ export const ensureInvoiceCurrencyColumns = async (sequelize) => {
     String(typeof table === "string" ? table : table.tableName).toLowerCase()
   );
 
-  for (const tableName of ["Invoices", "FiscalNotes"]) {
+  for (const [tableName, columns] of Object.entries(TABLE_COLUMNS)) {
     // En una base nueva la tabla aún no existe; sync() la crea completa
     if (!existingTables.includes(tableName.toLowerCase())) continue;
 
     const table = await queryInterface.describeTable(tableName);
 
-    for (const [column, definition] of Object.entries(COLUMNS)) {
+    for (const [column, definition] of Object.entries(columns)) {
       if (!table[column]) {
         await queryInterface.addColumn(tableName, column, definition);
       }

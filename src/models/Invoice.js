@@ -111,6 +111,13 @@ export const Invoice = sequelize.define("Invoice", {
     defaultValue: null,
   },
 
+  // Cómo pagó el cliente: cash, card, transfer o payment_link (opcional)
+  paymentMethod: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    defaultValue: null,
+  },
+
   applyRetentions: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
