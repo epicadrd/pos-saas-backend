@@ -34,10 +34,11 @@ const uploadCertificate = multer({
   },
 });
 
+// Todos los usuarios consultan si la empresa emite e-CF; el detalle
+// de la solicitud (certificado, fechas) solo lo recibe el master
 router.get(
   "/request",
   protect,
-  requireRole("master"),
   getElectronicInvoicingRequest
 );
 

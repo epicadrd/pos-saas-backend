@@ -23,8 +23,14 @@ import { validateLogoDataUrl } from "../utils/fileValidators.js";
 import { logSecurityEvent } from "../utils/securityLogger.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { logger } from "../utils/secureLogger.js";
+import { ECF_DISABLE_NOTICE } from "../config/ecfDisableNotice.js";
 
 const isProduction = process.env.NODE_ENV === "production";
+
+// Texto vigente del aviso para apagar el e-CF (se muestra tal cual en el POS)
+export const getEcfDisableNotice = (req, res) => {
+  return res.json(ECF_DISABLE_NOTICE);
+};
 
 const createAccessToken = (user) => {
   return jwt.sign(
@@ -540,7 +546,8 @@ export const updateTenant = async (req, res) => {
     if (
       electronicInvoicingEnabled === false &&
       tenant.electronicInvoicingEnabled === true &&
-      req.body.ecfDisableAccepted !== true
+      (req.body.ecfDisableAccepted !== true ||
+        req.body.ecfDisableNoticeVersion !== ECF_DISABLE_NOTICE.version)
     ) {
       return res.status(400).json({
         message:
@@ -628,7 +635,15 @@ export const updateTenant = async (req, res) => {
           : `${req.user.email} activó la facturación electrónica`,
         metadata: {
           electronicInvoicingEnabled: tenant.electronicInvoicingEnabled,
-          ...(disabled ? { ecfDisableAccepted: true, acceptedAt: new Date().toISOString() } : {}),
+          ...(disabled
+            ? {
+                ecfDisableAccepted: true,
+                acceptedAt: new Date().toISOString(),
+                noticeVersion: ECF_DISABLE_NOTICE.version,
+                noticeTitle: ECF_DISABLE_NOTICE.title,
+                noticeText: ECF_DISABLE_NOTICE.message,
+              }
+            : {}),
         },
       });
     }

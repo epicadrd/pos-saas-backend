@@ -468,6 +468,11 @@ export const createInvoice = async (req, res) => {
       transaction,
     });
 
+    // El backend decide si la factura lleva e-CF según el estado de la empresa,
+    // sin depender de lo que vea el POS (que puede no conocer ese estado).
+    // Queda marcada "e-CF no emitido" hasta que la DGII asigne el e-NCF.
+    const emitsEcf = !isDraft && (await tenantEmitsEcf(tenant, transaction));
+
     const invoice = await Invoice.create(
       {
         tenantId,
@@ -498,6 +503,7 @@ export const createInvoice = async (req, res) => {
         notes,
         createdBy: userId,
         updatedBy: userId,
+        ...(emitsEcf ? { electronicInvoiceStatus: "Error" } : {}),
       },
       { transaction }
     );
@@ -547,6 +553,7 @@ export const createInvoice = async (req, res) => {
         ? "Borrador guardado correctamente"
         : "Factura creada correctamente",
       invoice,
+      requiresEcf: emitsEcf,
     });
   } catch (error) {
     await transaction.rollback();

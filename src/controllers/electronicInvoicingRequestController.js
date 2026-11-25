@@ -42,8 +42,13 @@ export const getElectronicInvoicingRequest = async (req, res) => {
       },
     });
 
+    const data = getPublicRequestData(request);
+
     return res.json({
-      request: getPublicRequestData(request),
+      request:
+        req.user.role === "master"
+          ? data
+          : { status: data.status },
     });
   } catch (error) {
     logger.error("GET_ECF_REQUEST_ERROR", error, {
