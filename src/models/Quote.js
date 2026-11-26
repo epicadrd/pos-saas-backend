@@ -62,6 +62,13 @@ export const Quote = sequelize.define("Quote", {
     defaultValue: null,
   },
 
+  // Descuento en monto sobre toda la cotización; se resta antes del ITBIS
+  discountAmount: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: false,
+    defaultValue: 0,
+  },
+
   // Base del ITBIS: 100 (todo el monto) o 10 (18% sobre el 10%, Norma 07-2007)
   taxBasePercent: {
     type: DataTypes.INTEGER,

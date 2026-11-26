@@ -169,11 +169,37 @@ const getQuoteTaxRate = (taxConfig = {}) => {
     : 18;
 };
 
+// Descuento en monto de toda la cotización (en la moneda de la cotización)
+const parseQuoteDiscount = (value) => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  return roundMoney(amount);
+};
+
+// Reparte un descuento entre las líneas según su subtotal; los centavos
+// que sobran del redondeo van a la línea más grande
+const distributeDiscount = (subtotals, amount) => {
+  const sum = subtotals.reduce((acc, value) => acc + Number(value || 0), 0);
+  if (!(amount > 0) || !(sum > 0)) return subtotals.map(() => 0);
+
+  const discount = Math.min(amount, sum);
+  const shares = subtotals.map((value) => roundMoney((discount * Number(value || 0)) / sum));
+  const diff = roundMoney(discount - shares.reduce((acc, value) => acc + value, 0));
+
+  if (diff !== 0) {
+    const largest = subtotals.indexOf(Math.max(...subtotals.map(Number)));
+    shares[largest] = roundMoney(shares[largest] + diff);
+  }
+
+  return shares;
+};
+
 const normalizeQuoteItems = async ({
   items,
   tenantId,
   taxConfig = {},
   taxBasePercent,
+  discountAmount = 0,
   transaction,
 }) => {
   const normalizedItems = [];
@@ -269,10 +295,33 @@ const normalizeQuoteItems = async ({
     });
   }
 
+  const linesSubtotal = roundMoney(
+    normalizedItems.reduce((acc, item) => acc + item.subtotal, 0)
+  );
+
+  if (discountAmount > linesSubtotal) {
+    throw new Error("El descuento no puede ser mayor que el subtotal de la cotización");
+  }
+
+  // Las líneas guardan sus montos antes del descuento general (así se leen
+  // en la tabla). El ITBIS del documento se calcula sobre la parte ya
+  // descontada de cada línea: netTax, que no se guarda en la línea.
+  const shares = distributeDiscount(
+    normalizedItems.map((item) => item.subtotal),
+    discountAmount
+  );
+
+  normalizedItems.forEach((item, index) => {
+    const net = roundMoney(item.subtotal - shares[index]);
+    item.netTax = item.isTaxable
+      ? roundMoney(net * (item.taxRate / 100) * baseFactor)
+      : 0;
+  });
+
   return normalizedItems;
 };
 
-const sumTotals = (items) => {
+const sumTotals = (items, discountAmount = 0) => {
   const subtotal = roundMoney(
     items.reduce(
       (acc, item) => acc + Number(item.subtotal || 0),
@@ -280,14 +329,15 @@ const sumTotals = (items) => {
     )
   );
 
+  // ITBIS después del descuento general (netTax); sin descuento es el mismo
   const tax = roundMoney(
     items.reduce(
-      (acc, item) => acc + Number(item.tax || 0),
+      (acc, item) => acc + Number(item.netTax ?? item.tax ?? 0),
       0
     )
   );
 
-  const total = roundMoney(subtotal + tax);
+  const total = roundMoney(subtotal - discountAmount + tax);
 
   return {
     subtotal,
@@ -397,16 +447,18 @@ export const createQuote = async (req, res) => {
     }
 
     const taxBasePercent = parseTaxBasePercent(req.body.taxBasePercent);
+    const discountAmount = parseQuoteDiscount(req.body.discountAmount);
 
     const formattedItems = await normalizeQuoteItems({
       items,
       tenantId,
       taxConfig: tenant,
       taxBasePercent,
+      discountAmount,
       transaction,
     });
 
-    const { subtotal, tax, total } = sumTotals(formattedItems);
+    const { subtotal, tax, total } = sumTotals(formattedItems, discountAmount);
     const quoteNumber = await generateQuoteNumber(tenantId, transaction);
 
     const customerId = await resolveCustomerId({
@@ -428,6 +480,7 @@ export const createQuote = async (req, res) => {
         currency,
         exchangeRate,
         taxBasePercent,
+        discountAmount,
         validUntil: validUntil || null,
         subtotal,
         tax,
@@ -567,6 +620,36 @@ export const convertQuoteToInvoice = async (req, res) => {
     // Cotización en US$: se factura en pesos (convertida con la tasa) o en
     // dólares, según lo que se elija al convertir
     let lines = quote.items.map(quoteLineToInvoiceLine);
+
+    // El descuento general pasa a la factura repartido entre las líneas
+    // (la factura solo tiene descuento por línea, y así cuadra el e-CF).
+    // El ITBIS de cada línea ya se calculó sobre su parte descontada.
+    const discountShares = distributeDiscount(
+      lines.map((line) => line.subtotal),
+      Number(quote.discountAmount || 0)
+    );
+
+    lines = lines.map((line, index) => {
+      const share = discountShares[index];
+      if (!share) return line;
+
+      const subtotal = roundMoney(line.subtotal - share);
+      const tax = line.isTaxable
+        ? roundMoney(
+            subtotal *
+              (Number(line.taxRate || 0) / 100) *
+              taxBaseFactor(quote.taxBasePercent)
+          )
+        : 0;
+
+      return {
+        ...line,
+        discount: roundMoney(line.discount + share),
+        subtotal,
+        tax,
+        total: roundMoney(subtotal + tax),
+      };
+    });
     let invoiceCurrency = "DOP";
     let invoiceRate = null;
 
@@ -690,16 +773,18 @@ export const updateQuote = async (req, res) => {
     const tenant = await Tenant.findByPk(tenantId, { transaction });
 
     const taxBasePercent = parseTaxBasePercent(req.body.taxBasePercent);
+    const discountAmount = parseQuoteDiscount(req.body.discountAmount);
 
     const formattedItems = await normalizeQuoteItems({
       items,
       tenantId,
       taxConfig: tenant,
       taxBasePercent,
+      discountAmount,
       transaction,
     });
 
-    const { subtotal, tax, total } = sumTotals(formattedItems);
+    const { subtotal, tax, total } = sumTotals(formattedItems, discountAmount);
 
     const customerId = await resolveCustomerId({
       tenantId,
@@ -718,6 +803,7 @@ export const updateQuote = async (req, res) => {
         currency,
         exchangeRate,
         taxBasePercent,
+        discountAmount,
         validUntil: validUntil || null,
         subtotal,
         tax,
