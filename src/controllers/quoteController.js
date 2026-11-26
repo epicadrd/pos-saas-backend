@@ -176,6 +176,15 @@ const parseQuoteDiscount = (value) => {
   return roundMoney(amount);
 };
 
+// Porcentaje que se imprime junto al descuento; vacío = no se imprime
+const parseDiscountPercent = (value, discountAmount) => {
+  if (!(discountAmount > 0) || value === "" || value === null || value === undefined) return null;
+  const percent = Number(value);
+  return Number.isFinite(percent) && percent > 0 && percent <= 100
+    ? Math.round(percent * 100) / 100
+    : null;
+};
+
 // Reparte un descuento entre las líneas según su subtotal; los centavos
 // que sobran del redondeo van a la línea más grande
 const distributeDiscount = (subtotals, amount) => {
@@ -448,6 +457,7 @@ export const createQuote = async (req, res) => {
 
     const taxBasePercent = parseTaxBasePercent(req.body.taxBasePercent);
     const discountAmount = parseQuoteDiscount(req.body.discountAmount);
+    const discountPercent = parseDiscountPercent(req.body.discountPercent, discountAmount);
 
     const formattedItems = await normalizeQuoteItems({
       items,
@@ -481,6 +491,7 @@ export const createQuote = async (req, res) => {
         exchangeRate,
         taxBasePercent,
         discountAmount,
+        discountPercent,
         validUntil: validUntil || null,
         subtotal,
         tax,
@@ -774,6 +785,7 @@ export const updateQuote = async (req, res) => {
 
     const taxBasePercent = parseTaxBasePercent(req.body.taxBasePercent);
     const discountAmount = parseQuoteDiscount(req.body.discountAmount);
+    const discountPercent = parseDiscountPercent(req.body.discountPercent, discountAmount);
 
     const formattedItems = await normalizeQuoteItems({
       items,
@@ -804,6 +816,7 @@ export const updateQuote = async (req, res) => {
         exchangeRate,
         taxBasePercent,
         discountAmount,
+        discountPercent,
         validUntil: validUntil || null,
         subtotal,
         tax,

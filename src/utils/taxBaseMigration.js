@@ -15,6 +15,7 @@ const TABLE_COLUMNS = {
   Quotes: {
     taxBasePercent: TAX_BASE_COLUMN,
     discountAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    discountPercent: { type: DataTypes.DECIMAL(6, 2), allowNull: true, defaultValue: null },
   },
   Invoices: { taxBasePercent: TAX_BASE_COLUMN },
 };
