@@ -9,6 +9,7 @@ import {
   sequelize,
   User
 } from "../models/index.js";
+import { parseTaxBasePercent, taxBaseFactor } from "../utils/taxBase.js";
 import {
   sanitizeString,
   sanitizeEmail,
@@ -75,6 +76,70 @@ const getEffectiveStatus = (quote) => {
 const roundMoney = (value) =>
   Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
+const QUOTE_CURRENCIES = ["DOP", "USD"];
+
+const parseRate = (value) => {
+  const rate = Number(value);
+  return Number.isFinite(rate) && rate > 0 && rate < 1000
+    ? Math.round(rate * 10000) / 10000
+    : null;
+};
+
+// La tasa de una cotización en US$ es de referencia: la definitiva se
+// elige al convertirla en factura
+const parseQuoteCurrency = (body) => {
+  const currency = QUOTE_CURRENCIES.includes(body.currency) ? body.currency : "DOP";
+
+  if (currency === "DOP") return { currency, exchangeRate: null };
+
+  const exchangeRate = parseRate(body.exchangeRate);
+
+  // Sirve para sumar la cotización en pesos en los totales
+  if (!exchangeRate) {
+    throw new Error("Indica la tasa de referencia del dólar para la cotización en US$");
+  }
+
+  return { currency, exchangeRate };
+};
+
+// Línea de cotización → línea de factura (el descuento pasa de % a monto)
+const quoteLineToInvoiceLine = (item) => ({
+  productId: item.productId,
+  productName: item.productName,
+  description: item.description,
+  quantity: Number(item.quantity),
+  unitPrice: Number(item.price),
+  discount: percentLineDiscountToAmount({
+    quantity: item.quantity,
+    unitPrice: item.price,
+    subtotal: item.subtotal,
+    discount: item.discount,
+  }),
+  subtotal: Number(item.subtotal),
+  tax: Number(item.tax),
+  isTaxable: item.isTaxable,
+  taxRate: item.taxRate,
+  total: Number(item.total),
+});
+
+// Lleva una línea en US$ a pesos con la tasa. Se recalcula desde el precio
+// para que cantidad x precio - descuento cuadre con el subtotal (lo valida el e-CF)
+const convertLineToPesos = (line, rate, taxBasePercent) => {
+  const unitPrice = roundMoney(line.unitPrice * rate);
+  const gross = roundMoney(line.quantity * unitPrice);
+  const discount = Math.min(roundMoney(line.discount * rate), gross);
+  const subtotal = roundMoney(gross - discount);
+  const tax =
+    line.tax > 0
+      ? roundMoney(
+          ((subtotal * Number(line.taxRate || 0)) / 100) *
+            taxBaseFactor(taxBasePercent)
+        )
+      : 0;
+
+  return { ...line, unitPrice, discount, subtotal, tax, total: roundMoney(subtotal + tax) };
+};
+
 const getQuoteTaxRate = (taxConfig = {}) => {
   const country = String(taxConfig.country || "DO").toUpperCase();
 
@@ -108,10 +173,12 @@ const normalizeQuoteItems = async ({
   items,
   tenantId,
   taxConfig = {},
+  taxBasePercent,
   transaction,
 }) => {
   const normalizedItems = [];
   const defaultTaxRate = getQuoteTaxRate(taxConfig);
+  const baseFactor = taxBaseFactor(taxBasePercent);
 
   for (const item of items) {
     const productId = item.productId || item.id || null;
@@ -173,7 +240,7 @@ const normalizeQuoteItems = async ({
 
     const taxRate = isTaxable ? defaultTaxRate : 0;
     const tax = isTaxable
-      ? roundMoney(subtotal * (taxRate / 100))
+      ? roundMoney(subtotal * (taxRate / 100) * baseFactor)
       : 0;
 
     const total = roundMoney(subtotal + tax);
@@ -307,6 +374,7 @@ export const createQuote = async (req, res) => {
     const notes = sanitizeString(req.body.notes, 3000) || null;
     const status = sanitizeString(req.body.status, 30) || "draft";
     const items = Array.isArray(req.body.items)? req.body.items: [];
+    const { currency, exchangeRate } = parseQuoteCurrency(req.body);
 
     if (!customerName?.trim()) {
       throw new Error("El nombre del cliente es obligatorio");
@@ -328,10 +396,13 @@ export const createQuote = async (req, res) => {
       throw new Error("Empresa no encontrada");
     }
 
+    const taxBasePercent = parseTaxBasePercent(req.body.taxBasePercent);
+
     const formattedItems = await normalizeQuoteItems({
       items,
       tenantId,
       taxConfig: tenant,
+      taxBasePercent,
       transaction,
     });
 
@@ -354,6 +425,9 @@ export const createQuote = async (req, res) => {
         customerRnc,
         customerPhone,
         customerEmail,
+        currency,
+        exchangeRate,
+        taxBasePercent,
         validUntil: validUntil || null,
         subtotal,
         tax,
@@ -490,6 +564,33 @@ export const convertQuoteToInvoice = async (req, res) => {
       throw new Error("Empresa no encontrada");
     }
 
+    // Cotización en US$: se factura en pesos (convertida con la tasa) o en
+    // dólares, según lo que se elija al convertir
+    let lines = quote.items.map(quoteLineToInvoiceLine);
+    let invoiceCurrency = "DOP";
+    let invoiceRate = null;
+
+    if (quote.currency === "USD") {
+      const rate = parseRate(req.body?.exchangeRate);
+
+      if (!rate) {
+        throw new Error("Indica la tasa del dólar para facturar esta cotización en US$");
+      }
+
+      if (req.body?.currency === "USD") {
+        invoiceCurrency = "USD";
+        invoiceRate = rate;
+      } else {
+        lines = lines.map((line) =>
+          convertLineToPesos(line, rate, quote.taxBasePercent)
+        );
+      }
+    }
+
+    const invoiceSubtotal = roundMoney(lines.reduce((acc, line) => acc + line.subtotal, 0));
+    const invoiceTax = roundMoney(lines.reduce((acc, line) => acc + line.tax, 0));
+    const invoiceTotal = roundMoney(invoiceSubtotal + invoiceTax);
+
     const invoice = await Invoice.create(
       {
         tenantId,
@@ -499,11 +600,14 @@ export const convertQuoteToInvoice = async (req, res) => {
         customerRnc: quote.customerRnc,
         customerPhone: quote.customerPhone,
         customerEmail: quote.customerEmail,
-        subtotal: quote.subtotal,
-        tax: quote.tax,
-        total: quote.total,
+        subtotal: invoiceSubtotal,
+        tax: invoiceTax,
+        total: invoiceTotal,
         amountPaid: 0,
-        balance: quote.total,
+        balance: invoiceTotal,
+        currency: invoiceCurrency,
+        exchangeRate: invoiceRate,
+        taxBasePercent: parseTaxBasePercent(quote.taxBasePercent),
         status: "draft",
         createdBy: userId, 
         updatedBy: userId,
@@ -518,31 +622,8 @@ export const convertQuoteToInvoice = async (req, res) => {
       { transaction }
     );
 
-    for (const item of quote.items) {
-      await InvoiceItem.create(
-        {
-          tenantId,
-          invoiceId: invoice.id,
-          productId: item.productId,
-          productName: item.productName,
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.price,
-          // En la cotización es %, en la factura es monto en pesos
-          discount: percentLineDiscountToAmount({
-            quantity: item.quantity,
-            unitPrice: item.price,
-            subtotal: item.subtotal,
-            discount: item.discount,
-          }),
-          subtotal: item.subtotal,
-          tax: item.tax,
-          isTaxable: item.isTaxable,
-          taxRate: item.taxRate,
-          total: item.total,
-        },
-        { transaction }
-      );
+    for (const line of lines) {
+      await InvoiceItem.create({ tenantId, invoiceId: invoice.id, ...line }, { transaction });
     }
 
     await quote.update(
@@ -596,6 +677,7 @@ export const updateQuote = async (req, res) => {
     const notes = sanitizeString(req.body.notes, 3000) || null;
     const status = sanitizeString(req.body.status, 30) || quote.status;
     const items = Array.isArray(req.body.items)? req.body.items: [];
+    const { currency, exchangeRate } = parseQuoteCurrency(req.body);
 
     if (!customerName?.trim()) {
       throw new Error("El nombre del cliente es obligatorio");
@@ -607,10 +689,13 @@ export const updateQuote = async (req, res) => {
 
     const tenant = await Tenant.findByPk(tenantId, { transaction });
 
+    const taxBasePercent = parseTaxBasePercent(req.body.taxBasePercent);
+
     const formattedItems = await normalizeQuoteItems({
       items,
       tenantId,
       taxConfig: tenant,
+      taxBasePercent,
       transaction,
     });
 
@@ -630,6 +715,9 @@ export const updateQuote = async (req, res) => {
         customerRnc,
         customerPhone,
         customerEmail,
+        currency,
+        exchangeRate,
+        taxBasePercent,
         validUntil: validUntil || null,
         subtotal,
         tax,

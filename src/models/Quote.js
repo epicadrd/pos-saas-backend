@@ -49,6 +49,26 @@ export const Quote = sequelize.define("Quote", {
     allowNull: true,
   },
 
+  // Una cotización puede ir en US$; al facturar se elige la moneda y la tasa
+  currency: {
+    type: DataTypes.STRING(3),
+    allowNull: false,
+    defaultValue: "DOP",
+  },
+
+  exchangeRate: {
+    type: DataTypes.DECIMAL(12, 4),
+    allowNull: true,
+    defaultValue: null,
+  },
+
+  // Base del ITBIS: 100 (todo el monto) o 10 (18% sobre el 10%, Norma 07-2007)
+  taxBasePercent: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 100,
+  },
+
   subtotal: {
     type: DataTypes.DECIMAL(12, 2),
     allowNull: false,

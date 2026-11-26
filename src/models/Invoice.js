@@ -111,6 +111,13 @@ export const Invoice = sequelize.define("Invoice", {
     defaultValue: null,
   },
 
+  // Base del ITBIS: 100 (todo el monto) o 10 (18% sobre el 10%, Norma 07-2007)
+  taxBasePercent: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 100,
+  },
+
   // Cómo pagó el cliente: cash, card, transfer o payment_link (opcional)
   paymentMethod: {
     type: DataTypes.STRING(20),

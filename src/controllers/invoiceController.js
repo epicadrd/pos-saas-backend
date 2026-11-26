@@ -12,6 +12,7 @@ import {
   FiscalSequence,
   ElectronicInvoicingRequest,
 } from "../models/index.js";
+import { parseTaxBasePercent, taxBaseFactor } from "../utils/taxBase.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { resolveCustomerId } from "../services/customerLinkService.js";
 import { getActiveFiscalUsage } from "../services/ecfEmissionService.js";
@@ -85,8 +86,10 @@ const validateAndNormalizeItems = async ({
   transaction,
   shouldValidateStock = true,
   taxConfig = {},
+  taxBasePercent,
 }) => {
   const normalizedItems = [];
+  const baseFactor = taxBaseFactor(taxBasePercent);
 
   for (const item of items) {
     const productId = item.productId || item.id || null;
@@ -145,7 +148,7 @@ const validateAndNormalizeItems = async ({
       (taxMode === "global" ? true : item.isTaxable !== false);
 
     const taxRate = isTaxable ? defaultTaxRate : 0;
-    const lineTax = roundMoney(lineSubtotal * (taxRate / 100));
+    const lineTax = roundMoney(lineSubtotal * (taxRate / 100) * baseFactor);
     const lineTotal = roundMoney(lineSubtotal + lineTax);
 
     normalizedItems.push({
@@ -431,12 +434,15 @@ export const createInvoice = async (req, res) => {
       throw new Error("Empresa no encontrada");
     }
 
+    const taxBasePercent = parseTaxBasePercent(req.body.taxBasePercent);
+
     const normalizedItems = await validateAndNormalizeItems({
       items,
       tenantId,
       transaction,
       shouldValidateStock: !isDraft,
       taxConfig: getInvoiceTaxConfig(tenant, invoiceType),
+      taxBasePercent,
     });
 
     const subtotal = roundMoney(normalizedItems.reduce((acc, i) => acc + Number(i.subtotal || 0), 0));
@@ -472,6 +478,7 @@ export const createInvoice = async (req, res) => {
     // sin depender de lo que vea el POS (que puede no conocer ese estado).
     // Queda marcada "e-CF no emitido" hasta que la DGII asigne el e-NCF.
     const emitsEcf = !isDraft && (await tenantEmitsEcf(tenant, transaction));
+    assertTaxBaseAllowsEcf(emitsEcf, taxBasePercent);
 
     const invoice = await Invoice.create(
       {
@@ -488,6 +495,7 @@ export const createInvoice = async (req, res) => {
         currency,
         exchangeRate,
         paymentMethod: parsePaymentMethod(req.body.paymentMethod),
+        taxBasePercent,
         applyRetentions,
         itbisRetention,
         isrRetention,
@@ -613,12 +621,15 @@ export const updateDraftInvoice = async (req, res) => {
       throw new Error("Empresa no encontrada");
     }
 
+    const taxBasePercent = parseTaxBasePercent(req.body.taxBasePercent);
+
     const normalizedItems = await validateAndNormalizeItems({
       items,
       tenantId,
       transaction,
       shouldValidateStock: false,
       taxConfig: getInvoiceTaxConfig(tenant, invoiceType),
+      taxBasePercent,
     });
 
     const subtotal = roundMoney(normalizedItems.reduce((acc, item) => acc + Number(item.subtotal || 0), 0));
@@ -652,6 +663,7 @@ export const updateDraftInvoice = async (req, res) => {
         currency,
         exchangeRate,
         paymentMethod: parsePaymentMethod(req.body.paymentMethod),
+        taxBasePercent,
         applyRetentions,
         itbisRetention,
         isrRetention,
@@ -686,6 +698,16 @@ export const updateDraftInvoice = async (req, res) => {
     await transaction.rollback();
     console.log("UPDATE DRAFT INVOICE ERROR:", error);
     return res.status(400).json({ message: error.message });
+  }
+};
+
+// El e-CF todavía no admite ITBIS sobre el 10% del monto (ver ecfEmissionService):
+// se frena antes de emitir para no dejar la factura emitida sin su e-CF
+const assertTaxBaseAllowsEcf = (emitsEcf, taxBasePercent) => {
+  if (emitsEcf && parseTaxBasePercent(taxBasePercent) !== 100) {
+    throw new Error(
+      "Con la facturación electrónica activa todavía no se puede emitir una factura con ITBIS 18% sobre el 10%. Guárdala como borrador o usa ITBIS 18%."
+    );
   }
 };
 
@@ -753,6 +775,7 @@ export const issueDraftInvoice = async (req, res) => {
       transaction,
       shouldValidateStock: true,
       taxConfig: getInvoiceTaxConfig(tenant, invoice.invoiceType),
+      taxBasePercent: invoice.taxBasePercent,
     });
 
     const paid = sanitizeNumber(amountPaid);
@@ -782,6 +805,7 @@ export const issueDraftInvoice = async (req, res) => {
     // Queda marcada "e-CF no emitido" hasta que la DGII asigne el e-NCF.
     // Si el envío no llega a hacerse, la lista muestra el botón "Emitir e-CF".
     const emitsEcf = !invoice.eNcf && (await tenantEmitsEcf(tenant, transaction));
+    assertTaxBaseAllowsEcf(emitsEcf, invoice.taxBasePercent);
 
     await invoice.update(
       {

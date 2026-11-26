@@ -47,6 +47,7 @@ import { ensureCustomerEmailsColumn } from "./utils/customerEmailsMigration.js";
 import { ensurePosSaleEcfColumns } from "./utils/posSaleEcfMigration.js";
 import { ensureEcfTypeColumns, ensureNonExpiringSequences } from "./utils/ecfTypesMigration.js";
 import { ensureInvoiceCurrencyColumns } from "./utils/invoiceCurrencyMigration.js";
+import { ensureTaxBaseColumns } from "./utils/taxBaseMigration.js";
 import { ensureWebhookSecretColumns } from "./utils/receivedDocumentMigration.js";
 import { startECFStatusPoller } from "./services/ecfStatusPoller.js";
 import fiscalNoteRoutes from "./routes/fiscalNoteRoutes.js";
@@ -222,6 +223,9 @@ const startServer = async () => {
 
     await ensureInvoiceCurrencyColumns(sequelize);
     logger.info("INVOICE_CURRENCY_READY");
+
+    await ensureTaxBaseColumns(sequelize);
+    logger.info("TAX_BASE_READY");
 
     await ensureWebhookSecretColumns(sequelize);
     logger.info("WEBHOOK_SECRET_READY");

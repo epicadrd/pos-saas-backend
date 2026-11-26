@@ -1039,6 +1039,15 @@ export const emitInvoiceECF = async ({ tenantId, userId, invoiceId }) => {
     throw new FiscalNumberError("No puedes emitir e-CF de una factura anulada.");
   }
 
+  // El formato e-CF no permite ITBIS sobre una parte del monto: cada línea va
+  // al 18%, 16%, 0% o exenta. Falta confirmar con el contador cómo se reporta
+  // el 18% sobre el 10% (Norma 07-2007); mientras tanto no se envía.
+  if (Number(invoice.taxBasePercent || 100) !== 100) {
+    throw new FiscalNumberError(
+      "Esta factura lleva ITBIS 18% sobre el 10% del monto (Norma 07-2007). Por ahora Aventra no puede enviarla a la DGII como e-CF: emítela con el switch e-CF apagado o con ITBIS 18% normal, o contacta a soporte."
+    );
+  }
+
   const items = invoice.items || [];
 
   if (!items.length) {
